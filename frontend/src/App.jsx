@@ -10,7 +10,6 @@ export default function App() {
     <div>
       <nav style={{ display: 'flex', gap: '1rem', padding: '1rem', background: '#eee' }}>
         <button onClick={() => setPage('dashboard')}>Dashboard</button>
-        <button onClick={() => setPage('companies')}>Companies</button>
         <button onClick={() => setPage('vessels')}>Vessels</button> {/* ✅ new */}
       </nav>
 

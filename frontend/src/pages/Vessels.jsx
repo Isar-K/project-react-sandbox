@@ -5,17 +5,17 @@ export default function Vessels() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    fetch('/api/api/vessels')
-      .then(res => res.json())
-      .then(data => {
-        console.log('Fetched vessels:', data)
-        setVessels(data)
-        setLoading(false)
-      })
-      .catch(err => {
-        console.error('Error fetching vessels:', err)
-        setLoading(false)
-      })
+  fetch('http://localhost:5000/ships/api/database/vessels')
+    .then(res => res.json())
+    .then(data => {
+      console.log('Fetched vessels:', data)
+      setVessels(data)
+      setLoading(false)
+    })
+    .catch(err => {
+      console.error('Error fetching vessels:', err)
+      setLoading(false)
+    })
   }, [])
 
   if (loading)
