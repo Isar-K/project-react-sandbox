@@ -1,17 +1,15 @@
-import { defineConfig } from 'vite'
+import { definePlugin, defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
 export default defineConfig({
   plugins: [react()],
   server: {
     proxy: {
-      // everything starting with /api will be sent to your live Flask server
-      '/api': {
-        target: 'https://gerritsxd.com/ships',
+      '/ships': {
+        target: 'http://localhost:5000',
         changeOrigin: true,
-        secure: true,
-        rewrite: (path) => path.replace(/^\/api/, ''), // removes the /api prefix
-      },
-    },
-  },
+        secure: false
+      }
+    }
+  }
 })

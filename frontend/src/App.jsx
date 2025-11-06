@@ -1,7 +1,8 @@
 import { Routes, Route } from 'react-router-dom'
 import Navbar from './components/Navbar'
 import Hero from './components/Hero'
-import InfoCards from './components/InfoCards'  // Add this
+import InfoCards from './components/InfoCards' 
+import VesselDatabase from './components/VesselDatabase'  
 import Map from './pages/Map'
 
 function DataPage() {
@@ -20,6 +21,10 @@ function Home() {
   )
 }
 
+function DatabasePage() {  // Add this
+  return <VesselDatabase />
+}
+
 export default function App() {
   return (
     <div className="app-container">
@@ -27,9 +32,12 @@ export default function App() {
       <Routes>
         <Route path="/" element={<Home />} />
         <Route path="/map" element={<Map />} />
-        <Route path="/data" element={<DataPage />} />
+        <Route path="/database" element={<DatabasePage />} />
         <Route path="/about" element={<AboutPage />} />
       </Routes>
     </div>
   )
 }
+
+
+

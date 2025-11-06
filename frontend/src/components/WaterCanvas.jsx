@@ -1,3 +1,4 @@
+
 // WaterCanvas.jsx
 import { useEffect, useRef } from 'react';
 
@@ -34,10 +35,13 @@ export default function WaterCanvas() {
         speed: 0.03 + i * 0.008,
         offset: i * 15,
         opacity: 0.18 - i * 0.02,
-        initialY: canvas.height / dpr * -0.2, // Start above viewport
+        initialY: canvas.height / dpr * -0.2,
         targetY: baseY + i * 15,
         currentY: canvas.height / dpr * -0.2,
-        velocity: 0
+        velocity: 0,
+        // Wave splash effect on landing
+        splashAmplitude: 0,
+        splashDecay: 0.92
       });
     }
     
@@ -74,32 +78,38 @@ export default function WaterCanvas() {
     
     let time = 0;
     let scrollY = 0;
+    let targetScrollY = 0;
     let mouseX = canvas.width / (2 * dpr);
     let mouseY = canvas.height / (2 * dpr);
+    let targetMouseX = mouseX;
+    let targetMouseY = mouseY;
     let splashAnimationTime = 0;
     let hasLanded = false;
     
+    // Smooth interpolation for less jitter
+    const lerp = (start, end, factor) => {
+      return start + (end - start) * factor;
+    };
+    
     const handleScroll = () => {
-      scrollY = window.scrollY;
+      targetScrollY = window.scrollY;
     };
     
     const handleMouseMove = (e) => {
-      if (!hasLanded) return; // Don't create particles during initial splash
-      
       const rect = canvas.getBoundingClientRect();
       const newMouseX = e.clientX - rect.left;
       const newMouseY = e.clientY - rect.top;
       
-      // Clamp mouse position to canvas bounds to prevent navbar glitch
+      // Clamp mouse position to canvas bounds
       if (newMouseY < 0 || newMouseY > rect.height || newMouseX < 0 || newMouseX > rect.width) {
         return;
       }
       
-      mouseX = newMouseX;
-      mouseY = newMouseY;
+      targetMouseX = newMouseX;
+      targetMouseY = newMouseY;
       
-      // Create splash particles near mouse
-      if (Math.random() > 0.8 && particles.length < maxParticles) {
+      // Create splash particles near mouse (only after landing)
+      if (hasLanded && Math.random() > 0.8 && particles.length < maxParticles) {
         for (let i = 0; i < 4; i++) {
           particles.push(new Particle(
             mouseX,
@@ -111,12 +121,17 @@ export default function WaterCanvas() {
       }
     };
     
-    window.addEventListener('scroll', handleScroll);
+    window.addEventListener('scroll', handleScroll, { passive: true });
     canvas.addEventListener('mousemove', handleMouseMove);
     
     const animate = () => {
       const width = canvas.width / dpr;
       const height = canvas.height / dpr;
+      
+      // Smooth interpolation to reduce jitter (60fps = 0.15 is smooth)
+      scrollY = lerp(scrollY, targetScrollY, 0.15);
+      mouseX = lerp(mouseX, targetMouseX, 0.12);
+      mouseY = lerp(mouseY, targetMouseY, 0.12);
       
       // Clear with gradient background
       const gradient = ctx.createLinearGradient(0, 0, 0, height);
@@ -125,12 +140,11 @@ export default function WaterCanvas() {
       ctx.fillStyle = gradient;
       ctx.fillRect(0, 0, width, height);
       
-      // Initial splash animation (first 2 seconds)
-      if (splashAnimationTime < 2) {
+      // Initial splash animation (first 2.5 seconds)
+      if (splashAnimationTime < 2.5) {
         splashAnimationTime += 0.016;
         
         waves.forEach((wave, idx) => {
-          // Falling physics with acceleration
           const gravity = 1.2;
           const damping = 0.35;
           
@@ -138,11 +152,14 @@ export default function WaterCanvas() {
             wave.velocity += gravity;
             wave.currentY += wave.velocity;
           } else if (!hasLanded) {
-            // Just landed - create BIG splash!
+            // Just landed - create BIG splash AND wave splash effect!
             wave.currentY = wave.targetY;
             wave.velocity = 0;
             
-            if (idx === 0) { // Only trigger once
+            // Trigger wave splash on impact
+            wave.splashAmplitude = 80 - idx * 10; // Different splash sizes per wave
+            
+            if (idx === 0) {
               hasLanded = true;
               // Create massive splash particles
               for (let i = 0; i < 70; i++) {
@@ -162,18 +179,27 @@ export default function WaterCanvas() {
             if (Math.abs(wave.velocity) > 0.1) {
               wave.velocity *= -damping;
               wave.currentY = wave.targetY;
+              // Add smaller splash on bounce
+              wave.splashAmplitude = Math.abs(wave.velocity) * 15;
             } else {
               wave.velocity = 0;
               wave.currentY = wave.targetY;
             }
           }
+          
+          // Decay the splash effect over time
+          if (wave.splashAmplitude > 0.5) {
+            wave.splashAmplitude *= wave.splashDecay;
+          } else {
+            wave.splashAmplitude = 0;
+          }
         });
       }
       
-      // Scroll effect - waves rise/fall
+      // Scroll effect - waves rise/fall (smoothed)
       const scrollEffect = hasLanded ? Math.sin(scrollY * 0.01) * 25 : 0;
       
-      // Mouse influence (only after landing)
+      // Mouse influence (only after landing, smoothed)
       const mouseInfluence = hasLanded ? {
         x: (mouseX - width / 2) * 0.08,
         y: (mouseY - height / 2) * 0.08
@@ -185,7 +211,7 @@ export default function WaterCanvas() {
         ctx.moveTo(0, height);
         
         const points = [];
-        const currentBaseY = hasLanded ? wave.currentY : wave.currentY;
+        const currentBaseY = wave.currentY;
         
         for (let x = 0; x <= width; x += 5) {
           let y = currentBaseY;
@@ -196,11 +222,18 @@ export default function WaterCanvas() {
             );
             const mouseEffect = Math.max(0, 1 - distanceToMouse / 150) * 40;
             
+            // Add the wave splash effect - creates ripples radiating from center
+            const distanceFromCenter = Math.abs(x - width / 2);
+            const splashWave = wave.splashAmplitude * 
+              Math.sin((distanceFromCenter * 0.02) - (splashAnimationTime * 8)) *
+              Math.exp(-distanceFromCenter / (width * 0.3)); // Decay from center
+            
             y = currentBaseY +
               Math.sin(x * wave.frequency + time * wave.speed + wave.phase) * wave.amplitude +
               scrollEffect * (1 + idx * 0.2) +
               mouseEffect +
-              mouseInfluence.y;
+              mouseInfluence.y +
+              splashWave; // Add splash wave effect
           } else {
             // Add turbulence during fall
             y += Math.sin(x * 0.03 + splashAnimationTime * 8) * 15;
@@ -232,9 +265,10 @@ export default function WaterCanvas() {
         ctx.fillStyle = waveGradient;
         ctx.fill();
         
-        // Add white caps
+        // Add white caps (more prominent during splash)
         if (idx < 2) {
-          ctx.strokeStyle = `rgba(255, 255, 255, ${wave.opacity * 2})`;
+          const capOpacity = wave.opacity * 2 + (wave.splashAmplitude > 0 ? 0.3 : 0);
+          ctx.strokeStyle = `rgba(255, 255, 255, ${capOpacity})`;
           ctx.lineWidth = 2;
           ctx.stroke();
         }
