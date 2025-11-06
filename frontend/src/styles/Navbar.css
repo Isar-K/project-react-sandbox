@@ -1,0 +1,100 @@
+/* src/components/navbar.css */
+
+.nv-wrap {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  backdrop-filter: blur(16px) saturate(160%);
+  background: rgba(255, 255, 255, 0.8);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+  transition: background 0.3s ease;
+}
+
+/* optional subtle shadow when scrolling */
+.nv-wrap.scrolled {
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+}
+
+.nv {
+  height: 70px;
+  width: 100%;
+  padding: 0 5vw;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+
+.nv-logo {
+  position: absolute;
+  left: 5vw;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+  font-size: 1.2rem;
+  color: #0077b6; /* ocean blue accent */
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.nv-links {
+  display: flex;
+  gap: 1.5rem;
+  align-items: center;
+  justify-content: center;
+}
+
+.nv-link {
+  color: #0b2545;
+  text-decoration: none;
+  font-weight: 500;
+  font-size: 0.95rem;
+  transition: all 0.25s ease;
+  padding: 0.5rem 1rem;
+  border-radius: 999px;
+  position: relative;
+}
+
+.nv-link:hover {
+  color: #0077b6;
+  background: rgba(0, 119, 182, 0.1);
+}
+
+.nv-link.active {
+  color: #00b4d8;
+  background: rgba(0, 180, 216, 0.15);
+}
+
+/* underline effect */
+.nv-link .nv-underline {
+  position: absolute;
+  left: 15%;
+  right: 15%;
+  bottom: 6px;
+  height: 2px;
+  border-radius: 9999px;
+  background: #0077b6;
+  opacity: 0;
+  transform: scaleX(0);
+  transition: all 0.3s ease;
+}
+
+.nv-link.active .nv-underline,
+.nv-link:hover .nv-underline {
+  opacity: 1;
+  transform: scaleX(1);
+}
+
+@media (max-width: 768px) {
+  .nv-links {
+    gap: 0.5rem;
+    padding: 4px;
+  }
+  .nv-link {
+    padding: 0.6rem 0.8rem;
+    font-weight: 600;
+    font-size: 0.9rem;
+  }
+}

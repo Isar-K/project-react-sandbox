@@ -1,0 +1,67 @@
+/* Hero Section */
+.hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  text-align: center;
+  min-height: 80vh;
+  padding-top: 6rem;
+  background: linear-gradient(180deg, #f6faff 0%, #e9f4fb 100%);
+  color: #0b2545;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Water Canvas Background */
+.water-canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 1;
+  pointer-events: auto;
+}
+
+/* Hero Content */
+.hero-content {
+  max-width: 850px;
+  padding: 1rem 1.5rem 3rem;
+  z-index: 2;
+  position: relative;
+}
+
+.hero-content h1 {
+  font-size: 3.75rem;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  margin-bottom: 1.2rem;
+  line-height: 1.3;
+  background: linear-gradient(90deg, #0077b6, #00b4d8);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  text-shadow: 0 1px 3px rgba(255, 255, 255, 0.3);
+}
+
+.hero-content p {
+  font-size: 1.25rem;
+  color: #284b63;
+  line-height: 1.75;
+  max-width: 600px;
+  margin: 0 auto;
+  text-shadow: 0 1px 3px rgba(255, 255, 255, 0.8);
+}
+
+/* Bottom Fade Overlay */
+.hero-fade {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  height: 180px;
+  background: linear-gradient(180deg, rgba(255,255,255,0) 0%, #f6faff 100%);
+  pointer-events: none;
+  z-index: 2;
+}

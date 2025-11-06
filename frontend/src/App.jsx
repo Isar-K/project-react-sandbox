@@ -1,21 +1,38 @@
-import Dashboard from './pages/Dashboard'
-import Companies from './pages/Companies'
-import Vessels from './pages/Vessels'   // ✅ new
-import { useState } from 'react'
+import { Routes, Route } from 'react-router-dom'
+import Navbar from './components/Navbar'
+import Hero from './components/Hero'
+import InfoCards from './components/InfoCards'  // Add this
+
+// TEMP pages so routes don't break
+function MapPage() { 
+  return <div style={{ padding: '2rem', color: '#0b2545' }}>Map</div> 
+}
+function DataPage() { 
+  return <div style={{ padding: '2rem', color: '#0b2545' }}>Data</div> 
+}
+function AboutPage() { 
+  return <div style={{ padding: '2rem', color: '#0b2545' }}>About</div> 
+}
+
+function Home() {
+  return (
+    <>
+      <Hero />
+      <InfoCards />  {/* Add this */}
+    </>
+  )
+}
 
 export default function App() {
-  const [page, setPage] = useState('dashboard')
-
   return (
-    <div>
-      <nav style={{ display: 'flex', gap: '1rem', padding: '1rem', background: '#eee' }}>
-        <button onClick={() => setPage('dashboard')}>Dashboard</button>
-        <button onClick={() => setPage('vessels')}>Vessels</button> {/* ✅ new */}
-      </nav>
-
-      {page === 'dashboard' && <Dashboard />}
-      {page === 'companies' && <Companies />}
-      {page === 'vessels' && <Vessels />}
+    <div className="app-container">
+      <Navbar />
+      <Routes>
+        <Route path="/" element={<Home />} />
+        <Route path="/map" element={<MapPage />} />
+        <Route path="/data" element={<DataPage />} />
+        <Route path="/about" element={<AboutPage />} />
+      </Routes>
     </div>
   )
 }
