@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence, useMotionValue, animate } from 'framer-motion';
 import {
   Search,
@@ -10,113 +10,34 @@ import {
   BarChart3,
   X,
   ChevronDown,
-  Sparkles,
-  Activity
+  Download,
+  Eye,
+  Zap,
+  Globe
 } from 'lucide-react';
 import '../styles/Database.css';
 
-const AnimatedNumber = ({
-  value = 0,
-  decimals = 0,
-  suffix = '',
-  loading = false,
-  placeholderRange = [0, 100]
-}) => {
-  const [rangeStart = 0, rangeEnd = 100] = placeholderRange;
-  const count = useMotionValue(rangeStart);
-  const [displayValue, setDisplayValue] = useState(rangeStart);
-  const placeholderFrame = useRef(null);
-  const placeholderStart = useRef(null);
-  const liveAnimation = useRef(null);
-  const previousValue = useRef(value ?? rangeStart);
+// Animated Counter Component
+function CountUp({ to, from = 0, duration = 2, suffix = '' }) {
+  const nodeRef = useRef(null);
+  const [displayValue, setDisplayValue] = useState(from);
 
   useEffect(() => {
-    const unsubscribe = count.on('change', latest => {
-      previousValue.current = latest;
-      setDisplayValue(latest);
+    const controls = animate(from, to, {
+      duration,
+      ease: 'easeOut',
+      onUpdate: (latest) => setDisplayValue(Math.floor(latest))
     });
 
-    return () => unsubscribe();
-  }, [count]);
+    return () => controls.stop();
+  }, [from, to, duration]);
 
-  useEffect(() => {
-    const cancelPlaceholder = () => {
-      if (placeholderFrame.current) {
-        cancelAnimationFrame(placeholderFrame.current);
-        placeholderFrame.current = null;
-      }
-      placeholderStart.current = null;
-    };
-
-    if (loading) {
-      liveAnimation.current?.stop?.();
-      cancelPlaceholder();
-      count.set(rangeStart);
-      previousValue.current = rangeStart;
-      const span = rangeEnd - rangeStart || 120;
-      const duration = Math.max(1800, Math.abs(span) * 20);
-
-      const step = (timestamp) => {
-        if (!placeholderStart.current) {
-          placeholderStart.current = timestamp;
-        }
-        const elapsed = (timestamp - placeholderStart.current) % duration;
-        const progress = elapsed / duration;
-        const smoothProgress = progress * progress * (3 - 2 * progress);
-        const nextValue = rangeStart + smoothProgress * span;
-        count.set(nextValue);
-        placeholderFrame.current = requestAnimationFrame(step);
-      };
-
-      placeholderFrame.current = requestAnimationFrame(step);
-
-      return () => {
-        cancelPlaceholder();
-      };
-    }
-
-    cancelPlaceholder();
-
-    const numericValue = Number(value ?? 0);
-    if (!Number.isFinite(numericValue)) {
-      return undefined;
-    }
-
-    if (Math.abs(numericValue - previousValue.current) < 1 / Math.pow(10, decimals + 2)) {
-      count.set(numericValue);
-      return undefined;
-    }
-
-    liveAnimation.current?.stop?.();
-    liveAnimation.current = animate(count, numericValue, {
-      duration: 1.15,
-      ease: [0.16, 1, 0.3, 1]
-    });
-
-    return () => liveAnimation.current?.stop?.();
-  }, [count, decimals, loading, rangeEnd, rangeStart, value]);
-
-  return (
-    <span>
-      {Number(displayValue).toLocaleString('en-US', {
-        minimumFractionDigits: decimals,
-        maximumFractionDigits: decimals
-      })}
-      {suffix}
-    </span>
-  );
-};
-
-const PLACEHOLDER_STATS = {
-  total: 1840,
-  withEmissions: 1240,
-  totalCo2: 12.4,
-  avgCo2: 28
-};
-const PLACEHOLDER_MATCH = (PLACEHOLDER_STATS.withEmissions / PLACEHOLDER_STATS.total) * 100;
+  return <span ref={nodeRef}>{displayValue.toLocaleString()}{suffix}</span>;
+}
 
 export default function VesselDatabase() {
-
+  const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+  
   const [vessels, setVessels] = useState([]);
   const [filteredVessels, setFilteredVessels] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -129,159 +50,77 @@ export default function VesselDatabase() {
     minCo2: '',
     showFilter: 'all'
   });
-  const [stats, setStats] = useState(null);
+  const [stats, setStats] = useState({
+    total: 0,
+    withEmissions: 0,
+    totalCo2: 0,
+    avgCo2: 0
+  });
   const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' });
   const [showFilters, setShowFilters] = useState(false);
   const [selectedVessel, setSelectedVessel] = useState(null);
-  const [apiStatus, setApiStatus] = useState({
-    vessels: 'pending',
-    stats: 'pending'
-  });
-  const [tableMode, setTableMode] = useState('compact');
+  const [viewMode, setViewMode] = useState('table');
 
-  const tableColumns = useMemo(() => ([
-    { key: 'mmsi', label: 'MMSI', sortable: true },
-    { key: 'name', label: 'Vessel Name', sortable: true },
-    { key: 'ship_type', label: 'Type', sortable: true },
-    { key: 'length', label: 'Length (m)', sortable: true },
-    { key: 'flag_state', label: 'Flag', sortable: true },
-    { key: 'signatory_company', label: 'Company', sortable: true },
-    { key: 'total_co2_emissions', label: 'CO₂ Emissions', sortable: true },
-    { key: 'avg_co2_per_distance', label: 'CO₂/Distance', sortable: true },
-    { key: 'econowind_fit_score', label: 'Fit Score', sortable: true },
-    { key: 'pulse', label: 'CO₂ Pulse', sortable: false }
-  ]), []);
-
-  const statsReady = Boolean(stats);
-  const displayStats = stats ?? PLACEHOLDER_STATS;
-  const statsLoading = !statsReady || apiStatus.stats === 'loading';
-
-  const matchPercentage = statsReady && stats.total
-    ? (stats.withEmissions / stats.total) * 100
-    : PLACEHOLDER_MATCH;
-
-  const renderTableHead = () => (
-    <thead>
-      <tr>
-        {tableColumns.map(column => (
-          <th
-            key={column.key}
-            onClick={column.sortable ? () => handleSort(column.key) : undefined}
-            className={column.sortable ? 'sortable' : 'static'}
-          >
-            {column.label}
-          </th>
-        ))}
-      </tr>
-    </thead>
-  );
-
-  // Fetch data on mount
   useEffect(() => {
     fetchVessels();
   }, []);
 
-  // Fetch stats after vessels are loaded
   useEffect(() => {
     if (vessels.length > 0) {
       fetchStats();
     }
   }, [vessels]);
 
-  // Apply filters when they change
   useEffect(() => {
     applyFilters();
   }, [searchTerm, filters, vessels]);
 
   const fetchVessels = async () => {
-    setApiStatus(prev => ({ ...prev, vessels: 'loading' }));
     try {
-      // Use fetch with full error handling
-      const response = await fetch('/ships/api/vessels/combined?limit=1000');
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
+      const response = await fetch(`${API_BASE}/ships/api/vessels/combined?limit=1000`);
+      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
       const data = await response.json();
-      console.log('✅ Fetched vessels:', data.length);
       setVessels(data);
       setFilteredVessels(data);
-      setApiStatus(prev => ({ ...prev, vessels: 'success' }));
       setLoading(false);
     } catch (error) {
-      console.error('❌ Error fetching vessels:', error);
-      setApiStatus(prev => ({ ...prev, vessels: 'error' }));
-      // Try fallback to database API
-      try {
-        const response = await fetch('/ships/api/database/vessels');
-        if (response.ok) {
-          const data = await response.json();
-          console.log('✅ Fetched from database API:', data.length);
-          setVessels(data);
-          setFilteredVessels(data);
-          setApiStatus(prev => ({ ...prev, vessels: 'success' }));
-        }
-      } catch (fallbackError) {
-        console.error('❌ Fallback also failed:', fallbackError);
-      }
+      console.error('Error:', error);
       setLoading(false);
     }
   };
 
   const fetchStats = async () => {
-    setApiStatus(prev => ({ ...prev, stats: 'loading' }));
     try {
       const responses = await Promise.allSettled([
-        fetch('/ships/api/stats').then(r => r.ok ? r.json() : null),
-        fetch('/ships/api/emissions/match-stats').then(r => r.ok ? r.json() : null),
-        fetch('/ships/api/emissions/stats').then(r => r.ok ? r.json() : null)
+        fetch(`${API_BASE}/ships/api/stats`).then(r => r.ok ? r.json() : null),
+        fetch(`${API_BASE}/ships/api/emissions/match-stats`).then(r => r.ok ? r.json() : null),
+        fetch(`${API_BASE}/ships/api/emissions/stats`).then(r => r.ok ? r.json() : null)
       ]);
-
-      const [aisStats, matchStats, emissionsStats] = responses.map(r =>
+      
+      const [, matchStats, emissionsStats] = responses.map(r => 
         r.status === 'fulfilled' ? r.value : null
       );
-
-      console.log('📊 Stats fetched:', { aisStats, matchStats, emissionsStats });
-
+      
       if (matchStats && emissionsStats) {
         setStats({
           total: matchStats.total_ais_vessels || 0,
           withEmissions: matchStats.matched_vessels || 0,
-          totalCo2: emissionsStats.total_co2_emissions
-            ? Number((emissionsStats.total_co2_emissions / 1000000).toFixed(1))
+          totalCo2: emissionsStats.total_co2_emissions 
+            ? parseFloat((emissionsStats.total_co2_emissions / 1000000).toFixed(1))
             : 0,
-          avgCo2: emissionsStats.average_co2_per_vessel
+          avgCo2: emissionsStats.average_co2_per_vessel 
             ? Math.round(emissionsStats.average_co2_per_vessel)
             : 0
         });
-        setApiStatus(prev => ({ ...prev, stats: 'success' }));
-      } else {
-        // Set default stats if APIs fail
-        console.warn('⚠️ Using default stats due to API errors');
-        setStats({
-          total: vessels.length,
-          withEmissions: vessels.filter(v => v.total_co2_emissions).length,
-          totalCo2: 0,
-          avgCo2: 0
-        });
-        setApiStatus(prev => ({ ...prev, stats: 'partial' }));
       }
     } catch (error) {
-      console.error('❌ Error fetching stats:', error);
-      setApiStatus(prev => ({ ...prev, stats: 'error' }));
-      // Use vessel data as fallback
-      setStats({
-        total: vessels.length,
-        withEmissions: vessels.filter(v => v.total_co2_emissions).length,
-        totalCo2: 0,
-        avgCo2: 0
-      });
+      console.error('Stats error:', error);
     }
   };
 
   const applyFilters = () => {
     let filtered = [...vessels];
 
-    // Search filter
     if (searchTerm) {
       const term = searchTerm.toLowerCase();
       filtered = filtered.filter(v =>
@@ -292,33 +131,24 @@ export default function VesselDatabase() {
       );
     }
 
-    // Length filters
-    if (filters.minLength) {
-      filtered = filtered.filter(v => v.length >= parseInt(filters.minLength));
-    }
-    if (filters.maxLength) {
-      filtered = filtered.filter(v => v.length <= parseInt(filters.maxLength));
-    }
-
-    // Ship type filter
+    if (filters.minLength) filtered = filtered.filter(v => v.length >= parseInt(filters.minLength));
+    if (filters.maxLength) filtered = filtered.filter(v => v.length <= parseInt(filters.maxLength));
+    
     if (filters.shipType) {
       const typeNum = parseInt(filters.shipType);
       filtered = filtered.filter(v => v.ship_type >= typeNum && v.ship_type < typeNum + 10);
     }
-
-    // Flag state filter
+    
     if (filters.flagState) {
-      filtered = filtered.filter(v =>
+      filtered = filtered.filter(v => 
         v.flag_state?.toLowerCase().includes(filters.flagState.toLowerCase())
       );
     }
-
-    // CO2 filter
+    
     if (filters.minCo2) {
       filtered = filtered.filter(v => v.total_co2_emissions >= parseFloat(filters.minCo2));
     }
-
-    // Show filter
+    
     if (filters.showFilter === 'emissions') {
       filtered = filtered.filter(v => v.total_co2_emissions != null);
     } else if (filters.showFilter === 'no-emissions') {
@@ -329,9 +159,6 @@ export default function VesselDatabase() {
   };
 
   const handleSort = (key) => {
-    const sortableColumn = tableColumns.find(column => column.key === key && column.sortable);
-    if (!sortableColumn) return;
-
     let direction = 'asc';
     if (sortConfig.key === key && sortConfig.direction === 'asc') {
       direction = 'desc';
@@ -341,15 +168,12 @@ export default function VesselDatabase() {
     const sorted = [...filteredVessels].sort((a, b) => {
       let aVal = a[key];
       let bVal = b[key];
-
       if (aVal == null) aVal = '';
       if (bVal == null) bVal = '';
-
       if (typeof aVal === 'number' && typeof bVal === 'number') {
         return direction === 'asc' ? aVal - bVal : bVal - aVal;
       }
-
-      return direction === 'asc'
+      return direction === 'asc' 
         ? String(aVal).localeCompare(String(bVal))
         : String(bVal).localeCompare(String(aVal));
     });
@@ -377,206 +201,130 @@ export default function VesselDatabase() {
     return { text: numScore, class: 'low' };
   };
 
-  const getStatusConfig = status => {
-    switch (status) {
-      case 'success':
-        return { label: 'Live', className: 'success', description: 'Streaming fresh insights' };
-      case 'loading':
-        return { label: 'Syncing', className: 'loading', description: 'Fetching the latest fleet data' };
-      case 'error':
-        return { label: 'Offline', className: 'error', description: 'Unable to reach service' };
-      case 'partial':
-        return { label: 'Partial', className: 'warning', description: 'Using blended data sources' };
-      default:
-        return { label: 'Pending', className: 'pending', description: 'Awaiting kickoff' };
-    }
+  const exportToCSV = () => {
+    const headers = ['MMSI', 'Name', 'Type', 'Length', 'Flag', 'Company', 'CO2', 'Fit Score'];
+    const rows = filteredVessels.map(v => [
+      v.mmsi, v.name, getShipTypeBadge(v.ship_type).name, v.length, v.flag_state,
+      v.signatory_company, v.total_co2_emissions, v.econowind_fit_score
+    ]);
+    
+    const csv = [headers, ...rows].map(row => row.join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'vessels.csv';
+    a.click();
   };
 
   return (
     <div className="database-container">
-      <motion.div
-        className="database-header"
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.6 }}
-      >
-        <div className="header-left">
-          <div className="header-icon">
-            <Sparkles size={28} />
-          </div>
-          <div>
-            <h1>Vessel Intelligence Hub</h1>
-            <p>
-              Dive into the global fleet with tactile filters, animated metrics, and a playful data
-              experience tailor-made for maritime exploration.
-            </p>
-          </div>
-        </div>
-        <div className="header-right">
-          <div className="header-metric">
-            <span className="metric-label">Experience Mode</span>
-            <span className="metric-value">Explorer</span>
-          </div>
-          <div className="header-metric">
-            <span className="metric-label">Data Freshness</span>
-            <span className="metric-value">Live Sync</span>
-          </div>
-        </div>
-      </motion.div>
-
-      <motion.div
-        className="status-strip"
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.1, duration: 0.6 }}
-      >
-        {[{
-          key: 'vessels',
-          label: 'Vessel API',
-          icon: <Anchor size={18} />
-        }, {
-          key: 'stats',
-          label: 'Emissions API',
-          icon: <Activity size={18} />
-        }].map(item => {
-          const config = getStatusConfig(apiStatus[item.key]);
-          return (
-            <motion.div
-              key={item.key}
-              className={`status-pill ${config.className}`}
-              whileHover={{ y: -4 }}
-              transition={{ type: 'spring', stiffness: 300, damping: 20 }}
-            >
-              <span className="pill-icon">{item.icon}</span>
-              <div>
-                <strong>{item.label}</strong>
-                <p>{config.description}</p>
-              </div>
-              <span className="pill-status">{config.label}</span>
-            </motion.div>
-          );
-        })}
-      </motion.div>
-
-      {/* Hero Stats Section */}
-      <motion.div
+      {/* Animated Stats */}
+      <motion.div 
         className="stats-grid"
-        initial={{ opacity: 0, y: 20 }}
+        initial={{ opacity: 0, y: 30 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.6 }}
+        transition={{ duration: 0.8, ease: 'easeOut' }}
       >
-        <motion.div
+        <motion.div 
           className="stat-card"
-          whileHover={{ y: -5, boxShadow: '0 8px 30px rgba(0, 119, 182, 0.3)' }}
+          whileHover={{ scale: 1.05, rotate: 1 }}
+          transition={{ type: 'spring', stiffness: 300 }}
         >
-          <Ship className="stat-icon" size={32} />
+          <motion.div
+            initial={{ scale: 0 }}
+            animate={{ scale: 1 }}
+            transition={{ delay: 0.2, type: 'spring' }}
+          >
+            <Ship className="stat-icon" size={32} />
+          </motion.div>
           <div className="stat-value">
-            <AnimatedNumber
-              value={displayStats.total}
-              loading={statsLoading}
-              placeholderRange={[620, 2200]}
-            />
+            <CountUp to={stats.total} duration={2} />
           </div>
           <div className="stat-label">Total Vessels</div>
+          <motion.div 
+            className="stat-pulse"
+            animate={{ scale: [1, 1.2, 1], opacity: [0.3, 0, 0.3] }}
+            transition={{ duration: 2, repeat: Infinity }}
+          />
         </motion.div>
 
-        <motion.div
+        <motion.div 
           className="stat-card emissions"
-          whileHover={{ y: -5, boxShadow: '0 8px 30px rgba(81, 207, 102, 0.3)' }}
+          whileHover={{ scale: 1.05, rotate: -1 }}
+          transition={{ type: 'spring', stiffness: 300 }}
         >
-          <Wind className="stat-icon" size={32} />
+          <motion.div
+            initial={{ scale: 0 }}
+            animate={{ scale: 1 }}
+            transition={{ delay: 0.3, type: 'spring' }}
+          >
+            <Wind className="stat-icon" size={32} />
+          </motion.div>
           <div className="stat-value">
-            <AnimatedNumber
-              value={displayStats.withEmissions}
-              loading={statsLoading}
-              placeholderRange={[320, 1600]}
-            />
+            <CountUp to={stats.withEmissions} duration={2.5} />
           </div>
           <div className="stat-label">With Emissions Data</div>
+          <motion.div 
+            className="stat-pulse emissions"
+            animate={{ scale: [1, 1.2, 1], opacity: [0.3, 0, 0.3] }}
+            transition={{ duration: 2, repeat: Infinity, delay: 0.3 }}
+          />
         </motion.div>
 
-        <motion.div
+        <motion.div 
           className="stat-card co2"
-          whileHover={{ y: -5, boxShadow: '0 8px 30px rgba(255, 107, 107, 0.3)' }}
+          whileHover={{ scale: 1.05, rotate: 1 }}
+          transition={{ type: 'spring', stiffness: 300 }}
         >
-          <TrendingUp className="stat-icon" size={32} />
+          <motion.div
+            initial={{ scale: 0 }}
+            animate={{ scale: 1 }}
+            transition={{ delay: 0.4, type: 'spring' }}
+          >
+            <TrendingUp className="stat-icon" size={32} />
+          </motion.div>
           <div className="stat-value">
-            <AnimatedNumber
-              value={displayStats.totalCo2}
-              decimals={1}
-              suffix="M"
-              loading={statsLoading}
-              placeholderRange={[4, 14]}
-            />
+            <CountUp to={Math.floor(stats.totalCo2)} duration={3} suffix="M" />
           </div>
           <div className="stat-label">Total CO₂ (tonnes)</div>
+          <motion.div 
+            className="stat-pulse co2"
+            animate={{ scale: [1, 1.2, 1], opacity: [0.3, 0, 0.3] }}
+            transition={{ duration: 2, repeat: Infinity, delay: 0.6 }}
+          />
         </motion.div>
 
-        <motion.div
+        <motion.div 
           className="stat-card"
-          whileHover={{ y: -5, boxShadow: '0 8px 30px rgba(0, 180, 216, 0.3)' }}
+          whileHover={{ scale: 1.05, rotate: -1 }}
+          transition={{ type: 'spring', stiffness: 300 }}
         >
-          <BarChart3 className="stat-icon" size={32} />
+          <motion.div
+            initial={{ scale: 0 }}
+            animate={{ scale: 1 }}
+            transition={{ delay: 0.5, type: 'spring' }}
+          >
+            <BarChart3 className="stat-icon" size={32} />
+          </motion.div>
           <div className="stat-value">
-            <AnimatedNumber
-              value={filteredVessels.length}
-              loading={loading}
-              placeholderRange={[120, 480]}
-            />
+            <CountUp to={filteredVessels.length} duration={1.5} />
           </div>
           <div className="stat-label">Filtered Results</div>
+          <motion.div 
+            className="stat-pulse"
+            animate={{ scale: [1, 1.2, 1], opacity: [0.3, 0, 0.3] }}
+            transition={{ duration: 2, repeat: Infinity, delay: 0.9 }}
+          />
         </motion.div>
       </motion.div>
 
-      <motion.div
-        className="insights-panel"
+      {/* Action Bar */}
+      <motion.div 
+        className="action-bar"
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.15, duration: 0.6 }}
-      >
-        <div className="insight-card">
-          <div className="insight-icon">
-            <Activity size={22} />
-          </div>
-          <div>
-            <p className="insight-label">Emission Coverage</p>
-            <h3>
-              <AnimatedNumber
-                value={matchPercentage}
-                decimals={1}
-                suffix="%"
-                loading={statsLoading}
-                placeholderRange={[48, 72]}
-              />
-            </h3>
-            <span className="insight-subtext">of tracked vessels include CO₂ insights</span>
-          </div>
-        </div>
-        <div className="insight-card">
-          <div className="insight-icon">
-            <TrendingUp size={22} />
-          </div>
-          <div>
-            <p className="insight-label">Average CO₂ per Vessel</p>
-            <h3>
-              <AnimatedNumber
-                value={displayStats.avgCo2}
-                suffix=" t"
-                loading={statsLoading}
-                placeholderRange={[12, 38]}
-              />
-            </h3>
-            <span className="insight-subtext">tonnes emitted annually by each recorded vessel</span>
-          </div>
-        </div>
-      </motion.div>
-
-      {/* Search & Filter Bar */}
-      <motion.div
-        className="search-filter-bar"
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.2, duration: 0.6 }}
+        transition={{ delay: 0.3, duration: 0.6 }}
       >
         <div className="search-container">
           <Search className="search-icon" size={20} />
@@ -587,25 +335,53 @@ export default function VesselDatabase() {
             onChange={(e) => setSearchTerm(e.target.value)}
             className="search-input"
           />
+          {searchTerm && (
+            <motion.button
+              initial={{ scale: 0 }}
+              animate={{ scale: 1 }}
+              className="search-clear"
+              onClick={() => setSearchTerm('')}
+            >
+              <X size={16} />
+            </motion.button>
+          )}
         </div>
 
-        <button
-          className="filter-toggle-btn"
-          onClick={() => setShowFilters(!showFilters)}
-        >
-          <Filter size={18} />
-          Filters
-          <ChevronDown
-            size={16}
-            style={{
-              transform: showFilters ? 'rotate(180deg)' : 'rotate(0deg)',
-              transition: 'transform 0.3s'
-            }}
-          />
-        </button>
+        <div className="action-buttons">
+          <button 
+            className="action-btn"
+            onClick={() => setViewMode(viewMode === 'table' ? 'cards' : 'table')}
+          >
+            <Eye size={18} />
+            {viewMode === 'table' ? 'Cards' : 'Table'}
+          </button>
+
+          <button 
+            className="action-btn"
+            onClick={exportToCSV}
+            disabled={filteredVessels.length === 0}
+          >
+            <Download size={18} />
+            Export
+          </button>
+
+          <button 
+            className="filter-toggle-btn"
+            onClick={() => setShowFilters(!showFilters)}
+          >
+            <Filter size={18} />
+            Filters
+            <motion.div
+              animate={{ rotate: showFilters ? 180 : 0 }}
+              transition={{ duration: 0.3 }}
+            >
+              <ChevronDown size={16} />
+            </motion.div>
+          </button>
+        </div>
       </motion.div>
 
-      {/* Expandable Filters */}
+      {/* Filters */}
       <AnimatePresence>
         {showFilters && (
           <motion.div
@@ -616,7 +392,7 @@ export default function VesselDatabase() {
             transition={{ duration: 0.3 }}
           >
             <div className="filters-grid">
-              <div className="filter-group">
+              <motion.div className="filter-group" whileHover={{ scale: 1.02 }}>
                 <label>Min Length (m)</label>
                 <input
                   type="number"
@@ -624,9 +400,9 @@ export default function VesselDatabase() {
                   value={filters.minLength}
                   onChange={(e) => setFilters({...filters, minLength: e.target.value})}
                 />
-              </div>
+              </motion.div>
 
-              <div className="filter-group">
+              <motion.div className="filter-group" whileHover={{ scale: 1.02 }}>
                 <label>Max Length (m)</label>
                 <input
                   type="number"
@@ -634,9 +410,9 @@ export default function VesselDatabase() {
                   value={filters.maxLength}
                   onChange={(e) => setFilters({...filters, maxLength: e.target.value})}
                 />
-              </div>
+              </motion.div>
 
-              <div className="filter-group">
+              <motion.div className="filter-group" whileHover={{ scale: 1.02 }}>
                 <label>Ship Type</label>
                 <select
                   value={filters.shipType}
@@ -647,9 +423,9 @@ export default function VesselDatabase() {
                   <option value="70">Cargo</option>
                   <option value="80">Tanker</option>
                 </select>
-              </div>
+              </motion.div>
 
-              <div className="filter-group">
+              <motion.div className="filter-group" whileHover={{ scale: 1.02 }}>
                 <label>Flag State</label>
                 <input
                   type="text"
@@ -657,9 +433,9 @@ export default function VesselDatabase() {
                   value={filters.flagState}
                   onChange={(e) => setFilters({...filters, flagState: e.target.value})}
                 />
-              </div>
+              </motion.div>
 
-              <div className="filter-group">
+              <motion.div className="filter-group" whileHover={{ scale: 1.02 }}>
                 <label>Min CO₂ (tonnes)</label>
                 <input
                   type="number"
@@ -667,9 +443,9 @@ export default function VesselDatabase() {
                   value={filters.minCo2}
                   onChange={(e) => setFilters({...filters, minCo2: e.target.value})}
                 />
-              </div>
+              </motion.div>
 
-              <div className="filter-group">
+              <motion.div className="filter-group" whileHover={{ scale: 1.02 }}>
                 <label>Show Only</label>
                 <select
                   value={filters.showFilter}
@@ -679,11 +455,13 @@ export default function VesselDatabase() {
                   <option value="emissions">With Emissions</option>
                   <option value="no-emissions">Without Emissions</option>
                 </select>
-              </div>
+              </motion.div>
             </div>
 
-            <button
+            <motion.button 
               className="clear-filters-btn"
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
               onClick={() => {
                 setFilters({
                   minLength: '',
@@ -698,205 +476,185 @@ export default function VesselDatabase() {
             >
               <X size={16} />
               Clear All Filters
-            </button>
+            </motion.button>
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* Vessels Table */}
-      <motion.div
-        className={`table-container ${tableMode}`}
+      {/* Data Display */}
+      <motion.div 
+        className="data-container"
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
-        transition={{ delay: 0.4, duration: 0.6 }}
+        transition={{ delay: 0.5, duration: 0.6 }}
       >
-        <div className="table-toolbar">
-          <div className="toolbar-title">
-            <div className="toolbar-icon">
-              <Sparkles size={16} />
-            </div>
-            <span>Fleet Matrix</span>
-          </div>
-          <div className="toolbar-modes">
-            {[{ key: 'compact', label: 'Compact Grid' }, { key: 'immersive', label: 'Immersive Flow' }].map(mode => (
-              <button
-                key={mode.key}
-                type="button"
-                className={`toolbar-pill ${tableMode === mode.key ? 'active' : ''}`}
-                onClick={() => setTableMode(mode.key)}
-              >
-                {mode.label}
-              </button>
-            ))}
-          </div>
-          <p className="toolbar-hint">Tap a row to open the vessel hologram</p>
-        </div>
-
-        <div className="pulse-legend">
-          <div className="legend-wave" aria-hidden="true">
-            <span></span>
-          </div>
-          <div>
-            <strong>CO₂ Pulse</strong>
-            <p>
-              Relative emission intensity per nautical mile compared to a 1,500&nbsp;kg/nm baseline.
-              Watch it swell as vessels grow more carbon hungry.
-            </p>
-          </div>
-        </div>
-
         {loading ? (
-          <div className={`table-scroll ${tableMode} loading`}>
-            <table className="vessels-table">
-              {renderTableHead()}
-              <tbody>
-                {Array.from({ length: 6 }).map((_, idx) => (
-                  <tr className="placeholder-row" key={`placeholder-${idx}`}>
-                    {tableColumns.map(column => {
-                      const placeholderClass =
-                        column.key === 'name'
-                          ? 'wide'
-                          : column.key === 'signatory_company'
-                          ? 'medium'
-                          : column.key === 'pulse'
-                          ? 'pulse'
-                          : '';
-                      return (
-                        <td key={`${column.key}-${idx}`}>
-                          <span className={`placeholder-blob ${placeholderClass}`}></span>
-                        </td>
-                      );
-                    })}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            <div className="table-loading-overlay">
-              <motion.div
-                className="loading-spinner"
-                animate={{ rotate: 360 }}
-                transition={{ duration: 1.2, repeat: Infinity, ease: 'linear' }}
-              >
-                <Anchor size={32} />
-              </motion.div>
-              <span>Syncing with fleet services…</span>
-            </div>
+          <div className="loading-state">
+            <motion.div
+              animate={{ 
+                rotate: 360,
+                scale: [1, 1.2, 1]
+              }}
+              transition={{ 
+                rotate: { duration: 2, repeat: Infinity, ease: 'linear' },
+                scale: { duration: 1, repeat: Infinity }
+              }}
+            >
+              <Anchor size={48} className="loading-icon" />
+            </motion.div>
+            <motion.p
+              animate={{ opacity: [0.5, 1, 0.5] }}
+              transition={{ duration: 1.5, repeat: Infinity }}
+            >
+              Loading vessel data...
+            </motion.p>
           </div>
         ) : filteredVessels.length === 0 ? (
-          <div className="empty-state">
-            <Ship size={64} />
+          <motion.div 
+            className="empty-state"
+            initial={{ scale: 0.8, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+          >
+            <motion.div
+              animate={{ y: [0, -10, 0] }}
+              transition={{ duration: 2, repeat: Infinity }}
+            >
+              <Ship size={64} />
+            </motion.div>
             <h3>No vessels found</h3>
             <p>Try adjusting your filters or search terms</p>
+          </motion.div>
+        ) : viewMode === 'cards' ? (
+          <div className="cards-grid">
+            {filteredVessels.slice(0, 50).map((vessel, idx) => {
+              const typeInfo = getShipTypeBadge(vessel.ship_type);
+              const scoreInfo = getScoreBadge(vessel.econowind_fit_score);
+              const hasEmissions = vessel.total_co2_emissions != null;
+
+              return (
+                <motion.div
+                  key={vessel.mmsi}
+                  className={`vessel-card ${hasEmissions ? 'has-emissions' : ''}`}
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: idx * 0.03 }}
+                  whileHover={{ y: -8, boxShadow: '0 12px 40px rgba(0, 119, 182, 0.2)' }}
+                  onClick={() => setSelectedVessel(vessel)}
+                >
+                  <div className="card-header">
+                    <h3>{vessel.name || 'Unknown'}</h3>
+                    {hasEmissions && (
+                      <motion.span 
+                        className="emissions-badge"
+                        initial={{ scale: 0 }}
+                        animate={{ scale: 1 }}
+                        transition={{ delay: idx * 0.03 + 0.2 }}
+                      >
+                        ✓ CO₂
+                      </motion.span>
+                    )}
+                  </div>
+                  <div className="card-body">
+                    <div className="card-detail">
+                      <Globe size={16} />
+                      <span>{vessel.flag_state || 'Unknown'}</span>
+                    </div>
+                    <div className="card-detail">
+                      <Anchor size={16} />
+                      <span>{vessel.length || 'N/A'}m</span>
+                    </div>
+                    <span className={`type-badge ${typeInfo.class}`}>
+                      {typeInfo.name}
+                    </span>
+                  </div>
+                  <div className="card-footer">
+                    <div className="co2-display">
+                      <TrendingUp size={14} />
+                      <span className="co2-value">
+                        {vessel.total_co2_emissions 
+                          ? formatNumber(vessel.total_co2_emissions) + ' t'
+                          : 'N/A'}
+                      </span>
+                    </div>
+                    <span className={`score-badge ${scoreInfo.class}`}>
+                      <Zap size={12} />
+                      {scoreInfo.text}
+                    </span>
+                  </div>
+                </motion.div>
+              );
+            })}
           </div>
         ) : (
-          <div className={`table-scroll ${tableMode}`}>
+          <div className="table-scroll">
             <table className="vessels-table">
-              {renderTableHead()}
+              <thead>
+                <tr>
+                  <th onClick={() => handleSort('mmsi')}>MMSI</th>
+                  <th onClick={() => handleSort('name')}>Vessel Name</th>
+                  <th onClick={() => handleSort('ship_type')}>Type</th>
+                  <th onClick={() => handleSort('length')}>Length</th>
+                  <th onClick={() => handleSort('flag_state')}>Flag</th>
+                  <th onClick={() => handleSort('signatory_company')}>Company</th>
+                  <th onClick={() => handleSort('total_co2_emissions')}>CO₂</th>
+                  <th onClick={() => handleSort('avg_co2_per_distance')}>CO₂/nm</th>
+                  <th onClick={() => handleSort('econowind_fit_score')}>Score</th>
+                </tr>
+              </thead>
               <tbody>
-                <AnimatePresence>
-                  {filteredVessels.map((vessel, idx) => {
-                    const typeInfo = getShipTypeBadge(vessel.ship_type);
-                    const scoreInfo = getScoreBadge(vessel.econowind_fit_score);
-                    const hasEmissions = vessel.total_co2_emissions != null;
-                    const intensityRatio = vessel.avg_co2_per_distance
-                      ? Math.min(2.4, vessel.avg_co2_per_distance / 1200)
-                      : null;
-                    const pulseIntensity = intensityRatio != null
-                      ? Math.max(8, Math.min(100, Math.round(Math.pow(intensityRatio, 0.65) * 62)))
-                      : hasEmissions
-                      ? 32
-                      : null;
-                    const pulseTone = pulseIntensity != null
-                      ? pulseIntensity >= 75
-                        ? '#ff6b6b'
-                        : pulseIntensity >= 48
-                        ? '#ffd43b'
-                        : '#51cf66'
-                      : '#00b4d8';
+                {filteredVessels.map((vessel, idx) => {
+                  const typeInfo = getShipTypeBadge(vessel.ship_type);
+                  const scoreInfo = getScoreBadge(vessel.econowind_fit_score);
+                  const hasEmissions = vessel.total_co2_emissions != null;
 
-                    return (
-                      <motion.tr
-                        key={vessel.mmsi}
-                        initial={{ opacity: 0, x: -20 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        exit={{ opacity: 0, x: 20 }}
-                        transition={{ delay: idx * 0.02 }}
-                        className={hasEmissions ? 'has-emissions' : ''}
-                        onClick={() => setSelectedVessel(vessel)}
-                        whileHover={{ backgroundColor: 'rgba(0, 119, 182, 0.08)' }}
-                      >
-                        <td>{vessel.mmsi || 'N/A'}</td>
-                        <td className="vessel-name">
-                          <strong>{vessel.name || 'Unknown'}</strong>
-                          {hasEmissions && <span className="emissions-badge">✓ CO₂</span>}
-                        </td>
-                        <td>
-                          <span className={`type-badge ${typeInfo.class}`}>
-                            {typeInfo.name}
-                          </span>
-                        </td>
-                        <td>
-                          {vessel.length ? (
-                            <AnimatedNumber value={vessel.length} />
-                          ) : (
-                            'N/A'
-                          )}
-                        </td>
-                        <td>{vessel.flag_state || 'Unknown'}</td>
-                        <td>{vessel.signatory_company || vessel.mrv_company || 'Unknown'}</td>
-                        <td className="co2-value">
-                          {vessel.total_co2_emissions ? (
-                            <AnimatedNumber value={vessel.total_co2_emissions} suffix=" t" />
-                          ) : (
-                            'N/A'
-                          )}
-                        </td>
-                        <td className={vessel.avg_co2_per_distance < 1000 ? 'efficiency-good' : 'efficiency-bad'}>
-                          {vessel.avg_co2_per_distance ? (
-                            <AnimatedNumber
-                              value={Number(vessel.avg_co2_per_distance.toFixed(1))}
-                              decimals={1}
-                              suffix=" kg/nm"
-                            />
-                          ) : (
-                            'N/A'
-                          )}
-                        </td>
-                        <td>
-                          <span className={`score-badge ${scoreInfo.class}`}>
-                            {scoreInfo.text}
-                          </span>
-                        </td>
-                        <td className="pulse-cell">
-                          {pulseIntensity != null ? (
-                            <div
-                              className="pulse-bar"
-                              title="Normalized CO₂ pulse against an efficient voyage baseline"
-                            >
-                              <span
-                                style={{
-                                  width: `${pulseIntensity}%`,
-                                  background: `linear-gradient(90deg, ${pulseTone}, rgba(0, 180, 216, 0.9))`
-                                }}
-                                data-intensity={pulseIntensity}
-                              ></span>
-                              <small>{pulseIntensity}%</small>
-                            </div>
-                          ) : (
-                            <span className="pulse-empty">--</span>
-                          )}
-                        </td>
-                      </motion.tr>
-                    );
-                  })}
-                </AnimatePresence>
+                  return (
+                    <motion.tr
+                      key={vessel.mmsi}
+                      initial={{ opacity: 0, x: -20 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ delay: Math.min(idx * 0.02, 1) }}
+                      className={hasEmissions ? 'has-emissions' : ''}
+                      onClick={() => setSelectedVessel(vessel)}
+                      whileHover={{ backgroundColor: 'rgba(0, 119, 182, 0.08)', scale: 1.01 }}
+                    >
+                      <td>{vessel.mmsi || 'N/A'}</td>
+                      <td className="vessel-name">
+                        <strong>{vessel.name || 'Unknown'}</strong>
+                        {hasEmissions && <span className="emissions-badge">✓</span>}
+                      </td>
+                      <td>
+                        <span className={`type-badge ${typeInfo.class}`}>
+                          {typeInfo.name}
+                        </span>
+                      </td>
+                      <td>{vessel.length || 'N/A'}</td>
+                      <td>{vessel.flag_state || 'Unknown'}</td>
+                      <td>{vessel.signatory_company || 'Unknown'}</td>
+                      <td className="co2-value">
+                        {vessel.total_co2_emissions 
+                          ? formatNumber(vessel.total_co2_emissions) + ' t'
+                          : 'N/A'}
+                      </td>
+                      <td className={vessel.avg_co2_per_distance < 1000 ? 'efficiency-good' : 'efficiency-bad'}>
+                        {vessel.avg_co2_per_distance 
+                          ? vessel.avg_co2_per_distance.toFixed(1)
+                          : 'N/A'}
+                      </td>
+                      <td>
+                        <span className={`score-badge ${scoreInfo.class}`}>
+                          {scoreInfo.text}
+                        </span>
+                      </td>
+                    </motion.tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
         )}
       </motion.div>
 
-      {/* Vessel Detail Modal */}
+      {/* Modal */}
       <AnimatePresence>
         {selectedVessel && (
           <motion.div
@@ -908,67 +666,91 @@ export default function VesselDatabase() {
           >
             <motion.div
               className="modal-content"
-              initial={{ scale: 0.8, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.8, opacity: 0 }}
+              initial={{ scale: 0.8, y: 50, opacity: 0 }}
+              animate={{ scale: 1, y: 0, opacity: 1 }}
+              exit={{ scale: 0.8, y: 50, opacity: 0 }}
+              transition={{ type: 'spring', damping: 25 }}
               onClick={(e) => e.stopPropagation()}
             >
               <button className="modal-close" onClick={() => setSelectedVessel(null)}>
                 <X size={24} />
               </button>
-
+              
               <div className="modal-header">
-                <h2>{selectedVessel.name || 'Unknown Vessel'}</h2>
-                <p>MMSI: {selectedVessel.mmsi} | IMO: {selectedVessel.imo || 'N/A'}</p>
+                <motion.h2
+                  initial={{ x: -20, opacity: 0 }}
+                  animate={{ x: 0, opacity: 1 }}
+                  transition={{ delay: 0.1 }}
+                >
+                  {selectedVessel.name || 'Unknown Vessel'}
+                </motion.h2>
+                <motion.p
+                  initial={{ x: -20, opacity: 0 }}
+                  animate={{ x: 0, opacity: 1 }}
+                  transition={{ delay: 0.2 }}
+                >
+                  MMSI: {selectedVessel.mmsi} | IMO: {selectedVessel.imo || 'N/A'}
+                </motion.p>
               </div>
 
               <div className="modal-body">
                 <div className="detail-grid">
-                  <div className="detail-item">
-                    <label>Length</label>
-                    <span>{selectedVessel.length || 'N/A'} m</span>
-                  </div>
-                  <div className="detail-item">
-                    <label>Flag State</label>
-                    <span>{selectedVessel.flag_state || 'Unknown'}</span>
-                  </div>
-                  <div className="detail-item">
-                    <label>Company</label>
-                    <span>{selectedVessel.signatory_company || 'Unknown'}</span>
-                  </div>
-                  <div className="detail-item">
-                    <label>CO₂ Emissions</label>
-                    <span className="co2-value">
-                      {formatNumber(selectedVessel.total_co2_emissions)} t
-                    </span>
-                  </div>
-                  <div className="detail-item">
-                    <label>Fuel Consumption</label>
-                    <span>{formatNumber(selectedVessel.total_fuel_consumption)} t</span>
-                  </div>
-                  <div className="detail-item">
-                    <label>Econowind Fit Score</label>
-                    <span className={`score-badge ${getScoreBadge(selectedVessel.econowind_fit_score).class}`}>
-                      {getScoreBadge(selectedVessel.econowind_fit_score).text}
-                    </span>
-                  </div>
+                  {[
+                    { label: 'Length', value: `${selectedVessel.length || 'N/A'} m` },
+                    { label: 'Flag State', value: selectedVessel.flag_state || 'Unknown' },
+                    { label: 'Company', value: selectedVessel.signatory_company || 'Unknown' },
+                    { label: 'CO₂ Emissions', value: formatNumber(selectedVessel.total_co2_emissions) + ' t', highlight: true },
+                    { label: 'Fuel Consumption', value: formatNumber(selectedVessel.total_fuel_consumption) + ' t' },
+                    { label: 'Fit Score', value: getScoreBadge(selectedVessel.econowind_fit_score).text, score: true }
+                  ].map((item, idx) => (
+                    <motion.div
+                      key={item.label}
+                      className="detail-item"
+                      initial={{ y: 20, opacity: 0 }}
+                      animate={{ y: 0, opacity: 1 }}
+                      transition={{ delay: 0.1 + idx * 0.05 }}
+                    >
+                      <label>{item.label}</label>
+                      <span className={item.highlight ? 'co2-value' : ''}>
+                        {item.score ? (
+                          <span className={`score-badge ${getScoreBadge(selectedVessel.econowind_fit_score).class}`}>
+                            {item.value}
+                          </span>
+                        ) : item.value}
+                      </span>
+                    </motion.div>
+                  ))}
                 </div>
 
-                <div className="modal-actions">
-                  <a href={`/ships/?mmsi=${selectedVessel.mmsi}`} className="action-btn primary">
+                <motion.div 
+                  className="modal-actions"
+                  initial={{ y: 20, opacity: 0 }}
+                  animate={{ y: 0, opacity: 1 }}
+                  transition={{ delay: 0.5 }}
+                >
+                  <motion.a 
+                    href={`/ships/?mmsi=${selectedVessel.mmsi}`} 
+                    className="action-btn primary"
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                  >
+                    <Globe size={18} />
                     View on Map
-                  </a>
+                  </motion.a>
                   {selectedVessel.imo && (
-                    <a
+                    <motion.a 
                       href={`/ships/api/emissions/vessel/${selectedVessel.imo}`}
-                      className="action-btn secondary"
+                      className="action-btn secondary" 
                       target="_blank"
                       rel="noreferrer"
+                      whileHover={{ scale: 1.05 }}
+                      whileTap={{ scale: 0.95 }}
                     >
-                      Full Emissions Report
-                    </a>
+                      <BarChart3 size={18} />
+                      Full Report
+                    </motion.a>
                   )}
-                </div>
+                </motion.div>
               </div>
             </motion.div>
           </motion.div>
