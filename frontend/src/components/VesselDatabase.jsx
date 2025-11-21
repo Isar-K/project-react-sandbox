@@ -17,6 +17,15 @@ import {
 } from 'lucide-react';
 import '../styles/Database.css';
 
+const debounce = (fn, delay) => {
+  let timer;
+  return (...args) => {
+    clearTimeout(timer);
+    timer = setTimeout(() => fn(...args), delay);
+  }
+};
+
+
 // Animated Counter Component
 function CountUp({ to, from = 0, duration = 2, suffix = '' }) {
   const nodeRef = useRef(null);
@@ -36,7 +45,7 @@ function CountUp({ to, from = 0, duration = 2, suffix = '' }) {
 }
 
 export default function VesselDatabase() {
-  const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+  const API_BASE = import.meta.env.VITE_API_URL || '';
   
   const [vessels, setVessels] = useState([]);
   const [filteredVessels, setFilteredVessels] = useState([]);
@@ -72,8 +81,11 @@ export default function VesselDatabase() {
   }, [vessels]);
 
   useEffect(() => {
-    applyFilters();
-  }, [searchTerm, filters, vessels]);
+    if (!loading && vessels.length > 0) {
+      debouncedApplyFilters();
+    }
+  }, [searchTerm, filters, vessels, loading]);
+
 
   const fetchVessels = async () => {
     try {
@@ -88,6 +100,7 @@ export default function VesselDatabase() {
       setLoading(false);
     }
   };
+
 
   const fetchStats = async () => {
     try {
@@ -157,6 +170,14 @@ export default function VesselDatabase() {
 
     setFilteredVessels(filtered);
   };
+
+  // Debounced filtering (must be defined AFTER applyFilters)
+const debouncedApplyFilters = useRef(
+  debounce(() => {
+    if (!loading && vessels.length > 0) applyFilters();
+  }, 150)
+).current;
+
 
   const handleSort = (key) => {
     let direction = 'asc';
@@ -456,6 +477,35 @@ export default function VesselDatabase() {
                   <option value="no-emissions">Without Emissions</option>
                 </select>
               </motion.div>
+
+
+              <div className="filters-actions" style={{ gridColumn: "1 / -1", marginTop: "10px" }}>
+              <button 
+                className="apply-filters-btn" 
+                onClick={() => applyFilters()}
+              >
+                Apply Filters
+              </button>
+
+              <button 
+                className="reset-filters-btn"
+                onClick={() => {
+                  setFilters({
+                    shipType: "",
+                    minLength: "",
+                    maxLength: "",
+                    minCo2: "",
+                    showFilter: "all"
+                  });
+                  setSearchTerm("");
+                  applyFilters();
+                }}
+                style={{ marginLeft: "10px" }}
+              >
+                Reset
+              </button>
+            </div>
+
             </div>
 
             <motion.button 
@@ -537,7 +587,7 @@ export default function VesselDatabase() {
                   className={`vessel-card ${hasEmissions ? 'has-emissions' : ''}`}
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: idx * 0.03 }}
+                  transition={{ delay: Math.min(idx * 0.005, 0.2) }}
                   whileHover={{ y: -8, boxShadow: '0 12px 40px rgba(0, 119, 182, 0.2)' }}
                   onClick={() => setSelectedVessel(vessel)}
                 >
@@ -728,15 +778,14 @@ export default function VesselDatabase() {
                   animate={{ y: 0, opacity: 1 }}
                   transition={{ delay: 0.5 }}
                 >
-                  <motion.a 
-                    href={`/ships/?mmsi=${selectedVessel.mmsi}`} 
-                    className="action-btn primary"
-                    whileHover={{ scale: 1.05 }}
-                    whileTap={{ scale: 0.95 }}
-                  >
-                    <Globe size={18} />
-                    View on Map
-                  </motion.a>
+                <motion.button
+                  className="action-btn primary"
+                  onClick={() => window.location.href = `/map?mmsi=${selectedVessel.mmsi}`}
+                >
+                  <Globe size={18} />
+                  View on Map
+                </motion.button>
+
                   {selectedVessel.imo && (
                     <motion.a 
                       href={`/ships/api/emissions/vessel/${selectedVessel.imo}`}

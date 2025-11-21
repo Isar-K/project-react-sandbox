@@ -6,6 +6,7 @@ import L from 'leaflet';
 import io from 'socket.io-client';
 import 'leaflet/dist/leaflet.css';
 import '../styles/Map.css';
+import VesselSidebar from '../components/VesselSidebar.jsx';
 
 // Animated Number Component
 function AnimatedNumber({ value }) {
@@ -19,10 +20,11 @@ function AnimatedNumber({ value }) {
 }
 
 // Custom hook to fit bounds with animation
-function MapBounds({ markers }) {
+function MapBounds({ markers, disabled }) {
   const map = useMap();
 
   useEffect(() => {
+    if (disabled) return;
     if (markers.length > 0) {
       const bounds = L.latLngBounds(markers.map(m => [m.lat, m.lon]));
       map.flyToBounds(bounds, {
@@ -31,73 +33,113 @@ function MapBounds({ markers }) {
         easeLinearity: 0.25
       });
     }
-  }, [markers, map]);
+  }, [markers, map, disabled]);
 
   return null;
 }
+
+
 
 // Wind Layer Component
 // Windy API Overlay for Leaflet (no iframe)
 
 
 
-// Ripple effect component for active vessels
-function VesselRipple({ position, color }) {
-  return (
-    <Circle
-      center={position}
-      radius={5000}
-      pathOptions={{
-        fillColor: color,
-        fillOpacity: 0,
-        color: color,
-        weight: 2,
-        opacity: 0.6
-      }}
-      className="vessel-ripple"
-    />
-  );
-}
 
 export default function VesselMap() {
   // ---- STATE ----
   const [vessels, setVessels] = useState([]);
+  const [darkMode, setDarkMode] = useState(false);
   const [filteredVessels, setFilteredVessels] = useState([]);
-  const [stats, setStats] = useState({ total: 0, active: 0 });
-  const [filters, setFilters] = useState({ type: 'all', size: 'all' });
-  const [isConnected, setIsConnected] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [stats, setStats] = useState({
+  total: 0,
+  active: 0,
+  withGT: 0,
+  wasp: 0
+  });
+
+  const [filters, setFilters] = useState({
+  type: 'all',
+  detailedType: 'all',
+  size: 'all',
+  gtCategory: 'all',
+  lengthMin: 0,
+  lengthMax: 400,
+  beamMin: 0,
+  beamMax: 100,
+  gtMin: 0,
+  gtMax: 300000,
+  speedMin: 0,
+  speedMax: 40,
+  hasIMO: false,
+  hasGT: false
+});
   const [selectedVessel, setSelectedVessel] = useState(null);
+  const [isConnected, setIsConnected] = useState(false);
   const [showRipples, setShowRipples] = useState(true);
-  const [showTrails, setShowTrails] = useState(false);
   const [hoveredVessel, setHoveredVessel] = useState(null);
-  const [vesselTrails, setVesselTrails] = useState({});
   const [showWindLayer, setShowWindLayer] = useState(false);
   const [windOpacity, setWindOpacity] = useState(50);
   const [waspFilterActive, setWaspFilterActive] = useState(false);
+  const [routeData, setRouteData] = useState(null);
+  const [routeLoading, setRouteLoading] = useState(false);
+  const [routeHours, setRouteHours] = useState(6); 
+
 
   // ---- REFS ----
   const socketRef = useRef(null);
   const hoverTimeoutRef = useRef(null);
 
   // Ship type configuration with ocean colors
-  const shipTypeInfo = {
-    60: { color: '#8b5cf6', name: 'Passenger', icon: '🛳️', accent: '#a78bfa' },
-    70: { color: '#10b981', name: 'Cargo', icon: '📦', accent: '#34d399' },
-    80: { color: '#f59e0b', name: 'Tanker', icon: '🛢️', accent: '#fbbf24' },
-    default: { color: '#06b6d4', name: 'Other', icon: '⛵', accent: '#22d3ee' }
+  const detailedShipTypeColors = {
+    'Bulk carrier':        { color: '#8B4513', icon: '⚓' },
+    'Container ship':      { color: '#FF4500', icon: '📦' },
+    'Container/ro-ro cargo ship': { color: '#FF6347', icon: '🚢' },
+    'General cargo ship':  { color: '#32CD32', icon: '📗' },
+    'Oil tanker':          { color: '#DC143C', icon: '🛢️' },
+    'Chemical tanker':     { color: '#FF1493', icon: '⚗️' },
+    'LNG carrier':         { color: '#9370DB', icon: '🔥' },
+    'Gas carrier':         { color: '#BA55D3', icon: '💨' },
+    'Vehicle carrier':     { color: '#FFD700', icon: '🚗' },
+    'Ro-ro ship':          { color: '#FFA500', icon: '🚛' },
+    'Ro-pax ship':         { color: '#FF8C00', icon: '🛳️' },
+    'Refrigerated cargo carrier': { color: '#00CED1', icon: '❄️' },
+    'Passenger ship':      { color: '#1E90FF', icon: '🛳️' },
+    'Passenger ship (Cruise Passenger ship)': { color: '#4169E1', icon: '🛳️' },
+    'Combination carrier': { color: '#20B2AA', icon: '🚢' },
+    'Other ship types':    { color: '#808080', icon: '⛵' },
+    'Other ship types (Offshore)': { color: '#696969', icon: '🏗️' }
   };
 
-  const getShipTypeInfo = (shipType) => {
-    if (shipType >= 60 && shipType < 70) return shipTypeInfo[60];
-    if (shipType >= 70 && shipType < 80) return shipTypeInfo[70];
-    if (shipType >= 80 && shipType < 90) return shipTypeInfo[80];
-    return shipTypeInfo.default;
-  };
+  const getShipTypeInfo = (vessel) => {
+    // Prefer detailed EU MRV ship type
+    if (vessel.detailed_ship_type && detailedShipTypeColors[vessel.detailed_ship_type]) {
+      const entry = detailedShipTypeColors[vessel.detailed_ship_type];
+      return {
+        color: entry.color,
+        name: vessel.detailed_ship_type,
+        icon: entry.icon,
+        accent: entry.color + 'AA'
+      };
+    }
+
+    // Fallback to AIS ship_type legacy logic
+    const shipType = vessel.ship_type;
+    if (shipType >= 70 && shipType < 80)
+      return { color: '#10b981', name: 'Cargo', icon: '📦', accent: '#34d399' };
+    if (shipType >= 80 && shipType < 90)
+      return { color: '#f59e0b', name: 'Tanker', icon: '🛢️', accent: '#fbbf24' };
+
+    // Default fallback
+    return { color: '#06b6d4', name: 'Other', icon: '⛵', accent: '#22d3ee' };
+};
+
 
   // Create custom animated marker icon
   const createVesselIcon = (vessel, isSelected) => {
     const isLarge = vessel.length >= 200;
-    const typeInfo = getShipTypeInfo(vessel.ship_type);
+    const typeInfo = getShipTypeInfo(vessel);
     const size = isLarge ? 18 : 14;
     const pulseSize = isSelected ? size + 6 : size;
     const isWindAssisted = vessel.wind_assisted === 1;
@@ -138,6 +180,22 @@ export default function VesselMap() {
     });
   };
 
+  useEffect(() => {
+  const urlParams = new URLSearchParams(window.location.search);
+  const mmsiParam = urlParams.get("mmsi");
+
+  if (mmsiParam && vessels.length > 0) {
+    const target = vessels.find(v => v.mmsi == mmsiParam);
+    if (target) {
+      setSelectedVessel(target.mmsi);
+      // Fit to vessel
+      if (mapRef.current) {
+        mapRef.current.flyTo([target.lat, target.lon], 12);
+      }
+    }
+  }
+}, [vessels]);
+
   // ---- FILTERING ----
   const applyFilters = (vesselList) => {
     return vesselList.filter(vessel => {
@@ -161,12 +219,70 @@ export default function VesselMap() {
         }
       }
 
+      // Detailed MRV type filter
+      if (filters.detailedType !== 'all') {
+        if (!vessel.detailed_ship_type || vessel.detailed_ship_type !== filters.detailedType) {
+          return false;
+        }
+      }
+
+
       // Size filter
       if (filters.size !== 'all') {
         if (filters.size === 'large' && vessel.length < 200) return false;
         if (filters.size === 'medium' && (vessel.length < 100 || vessel.length >= 200)) return false;
       }
 
+      // Advanced filters
+      if (vessel.length) {
+        if (vessel.length < filters.lengthMin || vessel.length > filters.lengthMax)
+          return false;
+      }
+
+      if (vessel.beam) {
+        if (vessel.beam < filters.beamMin || vessel.beam > filters.beamMax)
+          return false;
+      }
+
+      if (vessel.gross_tonnage != null) {
+        if (vessel.gross_tonnage < filters.gtMin || vessel.gross_tonnage > filters.gtMax)
+          return false;
+      }
+
+      if (vessel.sog != null) {
+        if (vessel.sog < filters.speedMin || vessel.sog > filters.speedMax)
+          return false;
+      }
+
+      if (filters.hasIMO && !vessel.imo) return false;
+      if (filters.hasGT && !vessel.gross_tonnage) return false;
+
+
+      // GT category filter
+      if (filters.gtCategory !== 'all') {
+        const gt = vessel.gross_tonnage || 0;
+
+        switch (filters.gtCategory) {
+          case 'le100':
+            if (gt > 100) return false;
+            break;
+
+          case 'gt100':
+            if (gt <= 100) return false;
+            break;
+
+          case 'gt1000':
+            if (gt <= 1000) return false;
+            break;
+
+          case 'gt5000':
+            if (gt <= 5000) return false;
+            break;
+
+          default:
+            break;
+        }
+      }
       return true;
     });
   };
@@ -177,93 +293,97 @@ export default function VesselMap() {
       .then(res => res.json())
       .then(data => {
         setVessels(data);
-        setStats(prev => ({ ...prev, total: data.length }));
-      })
-      .catch(err => console.error('Error loading vessels:', err));
-  }, []);
+        setStats(prev => ({
+          ...prev,
+          total: data.length,
+          withGT: data.filter(v => v.gross_tonnage > 0).length,
+          wasp: data.filter(v => v.wind_assisted === 1).length
+        }));
+      });
+  }, []);  // <-- THIS was missing
+
+
 
   // ---- APPLY FILTERS WHEN VESSELS OR FILTERS CHANGE ----
   useEffect(() => {
-    const filtered = applyFilters(vessels);
-    setFilteredVessels(filtered);
-    setStats(prev => ({ ...prev, active: filtered.length }));
+  const filtered = applyFilters(vessels);
+  const gtCount = vessels.filter(v => v.gross_tonnage > 0).length;
+  const waspCount = vessels.filter(v => v.wind_assisted === 1).length;
+
+  setFilteredVessels(filtered);
+  setStats(prev => ({
+    ...prev,
+    active: filtered.length,
+    withGT: gtCount,
+    wasp: waspCount
+  }));
+
   }, [vessels, filters, waspFilterActive]);
 
+
   // ---- WEBSOCKET CONNECTION (LIVE UPDATES) ----
-  useEffect(() => {
-    try {
-      fetch('/ships/api/vessels')
-        .then(() => {
-          socketRef.current = io({
-            path: '/ships/socket.io',
-            transports: ['websocket', 'polling'],
-            reconnection: true,
-            reconnectionDelay: 1000,
-            reconnectionAttempts: 5
-          });
+useEffect(() => {
+  try {
+    // --- DIRECT SOCKET INITIALIZATION (no fetch!) ---
+    socketRef.current = io({
+      path: '/ships/socket.io',
+      transports: ['websocket', 'polling'],
+      reconnection: true,
+      reconnectionDelay: 1000,
+      reconnectionAttempts: 5
+    });
 
-          socketRef.current.on('connect', () => {
-            setIsConnected(true);
-            console.log('✅ Connected to live vessel tracking');
-          });
+    socketRef.current.on('connect', () => {
+      setIsConnected(true);
+      console.log('✅ Connected to live vessel tracking');
+    });
 
-          socketRef.current.on('disconnect', () => {
-            setIsConnected(false);
-            console.log('⚠️ Disconnected from vessel tracking');
-          });
+    socketRef.current.on('disconnect', () => {
+      setIsConnected(false);
+      console.log('⚠️ Disconnected from vessel tracking');
+    });
 
-          socketRef.current.on('connect_error', () => {
-            console.log('Socket connection error (this is normal if backend is not running)');
-            setIsConnected(false);
-          });
+    socketRef.current.on('connect_error', () => {
+      console.log('Socket connection error (normal if backend is not running)');
+      setIsConnected(false);
+    });
 
-          socketRef.current.on('initial_data', (data) => {
-            console.log('📡 initial_data from server:', data);
-          });
+    socketRef.current.on('initial_data', (data) => {
+      console.log('📡 initial_data from server:', data);
+    });
 
-          socketRef.current.on('vessel_update', (data) => {
-            const { mmsi, position } = data;
+    socketRef.current.on('vessel_update', (data) => {
+      const { mmsi, position } = data;
 
-            setVessels(prev => {
-              const index = prev.findIndex(v => v.mmsi === mmsi);
+      setVessels(prev => {
+        const index = prev.findIndex(v => v.mmsi === mmsi);
 
-              if (index >= 0) {
-                const updated = [...prev];
-                const oldVessel = updated[index];
-                updated[index] = { ...oldVessel, ...position };
+        if (index >= 0) {
+          const updated = [...prev];
+          const oldVessel = updated[index];
+          updated[index] = { ...oldVessel, ...position };
 
-                if (oldVessel.lat && oldVessel.lon) {
-                  setVesselTrails(trails => ({
-                    ...trails,
-                    [mmsi]: [
-                      ...(trails[mmsi] || []).slice(-10),
-                      { lat: oldVessel.lat, lon: oldVessel.lon }
-                    ]
-                  }));
-                }
 
-                return updated;
-              } else {
-                const newVessel = { mmsi, ...position };
-                return [...prev, newVessel];
-              }
-            });
-          });
-        })
-        .catch(err => {
-          console.log('Backend not available - running in demo mode');
-          setIsConnected(false);
-        });
-    } catch (error) {
-      console.log('Socket initialization error:', error);
+          return updated;
+        } else {
+          // New vessel received live
+          return [...prev, { mmsi, ...position }];
+        }
+      });
+    });
+
+  } catch (error) {
+    console.log('Socket initialization error:', error);
+  }
+
+  // --- Cleanup ---
+  return () => {
+    if (socketRef.current) {
+      socketRef.current.disconnect();
     }
+  };
+}, []);  // <-- VERY IMPORTANT (runs once)
 
-    return () => {
-      if (socketRef.current) {
-        socketRef.current.disconnect();
-      }
-    };
-  }, []);
 
 
 function WindyEmbed({ opacity }) {
@@ -293,14 +413,19 @@ function WindyEmbed({ opacity }) {
     const interval = setInterval(() => {
       fetch('/ships/api/stats')
         .then(res => res.json())
-        .then(data => setStats(prev => ({ ...prev, total: data.total_vessels })))
+    .then(data => setStats(prev => ({
+    ...prev,
+    total: data.total_vessels,
+  withGT: vessels.filter(v => v.gross_tonnage > 0).length
+})))
+
         .catch(err => console.error('Error loading stats:', err));
     }, 5000);
     return () => clearInterval(interval);
   }, []);
 
   return (
-    <div className="vessel-map-page">
+    <div className={`vessel-map-page ${darkMode ? 'dark-mode' : ''}`}>
       {/* Animated Background Elements */}
       <div className="map-bg-waves">
         <div className="wave wave1"></div>
@@ -365,6 +490,39 @@ function WindyEmbed({ opacity }) {
               initial={{ y: 20, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
               transition={{ delay: 0.5, duration: 0.6 }}
+              whileHover={{ y: -5, boxShadow: '0 10px 30px rgba(255, 165, 0, 0.3)' }}
+            >
+              <div className="stat-icon">⚖️</div>
+              <div className="stat-content">
+                <div className="stat-value">
+                  <AnimatedNumber value={stats.withGT} />
+                </div>
+                <div className="stat-label">With GT Data</div>
+              </div>
+            </motion.div>
+
+            <motion.div
+            className="stat-card"
+            initial={{ y: 20, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            transition={{ delay: 0.55, duration: 0.6 }}
+            whileHover={{ y: -5, boxShadow: '0 10px 30px rgba(34, 197, 94, 0.3)' }}
+          >
+            <div className="stat-icon">🌬️</div>
+            <div className="stat-content">
+              <div className="stat-value">
+                <AnimatedNumber value={stats.wasp} />
+              </div>
+              <div className="stat-label">Wind-Assisted</div>
+            </div>
+          </motion.div>
+
+
+            <motion.div
+              className="stat-card"
+              initial={{ y: 20, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              transition={{ delay: 0.5, duration: 0.6 }}
               whileHover={{ y: -5, boxShadow: '0 10px 30px rgba(16, 185, 129, 0.3)' }}
             >
               <div className="stat-icon">
@@ -392,22 +550,35 @@ function WindyEmbed({ opacity }) {
           animate={{ opacity: 1 }}
           transition={{ delay: 0.6, duration: 0.6 }}
         >
+        
+
           <motion.div
-            className="filter-wrapper"
-            whileHover={{ scale: 1.02 }}
+          className="filter-wrapper"
+          whileHover={{ scale: 1.02 }}
+        >
+          <label>🧬 Detailed Type</label>
+          <select
+            value={filters.detailedType}
+            onChange={(e) =>
+              setFilters(prev => ({ ...prev, detailedType: e.target.value }))
+            }
           >
-            <label>🎯 Vessel Type</label>
-            <select
-              value={filters.type}
-              onChange={(e) => setFilters(prev => ({ ...prev, type: e.target.value }))}
-            >
-              <option value="all">All Types</option>
-              <option value="60">🛳️ Passenger</option>
-              <option value="70">📦 Cargo</option>
-              <option value="80">🛢️ Tanker</option>
-              <option value="other">⛵ Other</option>
-            </select>
-          </motion.div>
+            <option value="all">All detailed types</option>
+            <option value="Bulk carrier">Bulk carrier</option>
+            <option value="Container ship">Container ship</option>
+            <option value="General cargo ship">General cargo ship</option>
+            <option value="Oil tanker">Oil tanker</option>
+            <option value="Chemical tanker">Chemical tanker</option>
+            <option value="LNG carrier">LNG carrier</option>
+            <option value="Gas carrier">Gas carrier</option>
+            <option value="Vehicle carrier">Vehicle carrier</option>
+            <option value="Ro-ro ship">Ro-ro ship</option>
+            <option value="Refrigerated cargo carrier">Reefer</option>
+            <option value="Passenger ship">Passenger ship</option>
+            <option value="Other ship types">Other ship types</option>
+          </select>
+        </motion.div>
+
 
           <motion.div
             className="filter-wrapper"
@@ -424,23 +595,23 @@ function WindyEmbed({ opacity }) {
             </select>
           </motion.div>
 
-          <motion.button
-            className="ripple-toggle"
-            onClick={() => setShowRipples(!showRipples)}
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
+          <motion.div
+            className="filter-wrapper"
+            whileHover={{ scale: 1.02 }}
           >
-            {showRipples ? '🌊 Ripples ON' : '🌊 Ripples OFF'}
-          </motion.button>
+            <label>⚖️ Gross Tonnage</label>
+            <select
+              value={filters.gtCategory}
+              onChange={(e) => setFilters(prev => ({ ...prev, gtCategory: e.target.value }))}
+            >
+              <option value="all">All GT</option>
+              <option value="le100">≤ 100 GT</option>
+              <option value="gt100">{'>'} 100 GT</option>
+              <option value="gt1000">{'>'} 1,000 GT</option>
+              <option value="gt5000">{'>'} 5,000 GT</option>
+            </select>
+          </motion.div>
 
-          <motion.button
-            className="trail-toggle"
-            onClick={() => setShowTrails(!showTrails)}
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-          >
-            {showTrails ? '✨ Trails ON' : '✨ Trails OFF'}
-          </motion.button>
 
           <motion.button
             className="wasp-toggle"
@@ -470,6 +641,35 @@ function WindyEmbed({ opacity }) {
           </motion.button>
 
           <motion.button
+          className="darkmode-toggle"
+          onClick={() => setDarkMode(prev => !prev)}
+          whileHover={{ scale: 1.05 }}
+          whileTap={{ scale: 0.95 }}
+          style={{
+            background: darkMode
+              ? 'linear-gradient(135deg, #222 0%, #000 100%)'
+              : 'linear-gradient(135deg, #ffffff 0%, #dddddd 100%)',
+            border: darkMode ? '3px solid #555' : '3px solid #ccc',
+            color: darkMode ? '#fff' : '#000',
+            boxShadow: darkMode
+              ? '0 0 20px rgba(255,255,255,0.15)'
+              : '0 0 20px rgba(0,0,0,0.15)',
+            padding: '12px 24px',
+            borderRadius: '8px',
+            fontSize: '14px',
+            fontWeight: 'bold',
+            cursor: 'pointer',
+            transition: 'all 0.3s',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px'
+          }}
+        >
+          {darkMode ? '🌙 Dark Mode' : '☀️ Light Mode'}
+        </motion.button>
+
+
+          <motion.button
             className="wind-toggle"
             onClick={() => setShowWindLayer(!showWindLayer)}
             whileHover={{ scale: 1.05 }}
@@ -496,6 +696,40 @@ function WindyEmbed({ opacity }) {
             💨 {showWindLayer ? 'HIDE WIND DATA' : 'SHOW WIND DATA'}
           </motion.button>
 
+          <motion.button
+          className="advanced-filter-toggle"
+          onClick={() => setShowAdvanced(prev => !prev)}
+          whileHover={{ scale: 1.05 }}
+          whileTap={{ scale: 0.95 }}
+          style={{
+            padding: '10px 20px',
+            borderRadius: '8px',
+            background: showAdvanced
+              ? 'linear-gradient(135deg, #ff6600, #cc5200)'
+              : 'linear-gradient(135deg, #555, #333)',
+            color: '#fff',
+            fontWeight: 'bold',
+            cursor: 'pointer'
+          }}
+        >
+          ⚙️ Advanced Filters
+        </motion.button>
+
+        <div className="route-selector">
+        <label>Route History:</label>
+        <select
+          value={routeHours}
+          onChange={(e) => setRouteHours(parseInt(e.target.value))}
+        >
+          <option value={6}>Last 6h</option>
+          <option value={12}>Last 12h</option>
+          <option value={24}>Last 24h</option>
+          <option value={48}>Last 48h</option>
+          <option value={72}>Last 72h</option>
+        </select>
+        </div>
+
+
           {showWindLayer && (
             <motion.div
               className="wind-opacity-control"
@@ -520,6 +754,163 @@ function WindyEmbed({ opacity }) {
         </motion.div>
       </motion.div>
 
+      <AnimatePresence>
+        {showAdvanced && (
+        <motion.div
+              className="advanced-filters-panel"
+              initial={{ x: 300, opacity: 0 }}
+              animate={{ x: 0, opacity: 1 }}
+              exit={{ x: 300, opacity: 0 }}
+              transition={{ duration: 0.3 }}
+              style={{
+                position: 'absolute',
+                top: '120px',     // adjust if needed
+                right: '20px',
+                width: '300px',
+                maxHeight: '80vh',
+                overflowY: 'auto',
+                zIndex: 2000,
+                background: 'rgba(0,0,0,0.85)',
+                borderRadius: '12px',
+                padding: '20px',
+                color: '#fff',
+                backdropFilter: 'blur(8px)',
+                boxShadow: '0 0 20px rgba(0,0,0,0.5)',
+              }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+            <h3 style={{ margin: 0 }}>Advanced Filters</h3>
+            <button
+              onClick={() => setShowAdvanced(false)}
+              style={{
+                background: 'transparent',
+                border: 'none',
+                color: '#fff',
+                fontSize: '18px',
+                cursor: 'pointer'
+              }}
+            >
+              ✖
+            </button>
+          </div>
+
+          <p style={{ fontSize: '0.8rem', opacity: 0.8, marginBottom: '10px' }}>
+            Showing <strong>{filteredVessels.length}</strong> of <strong>{vessels.length}</strong> vessels
+          </p>
+          <div style={{ height: '1px', background: 'rgba(255,255,255,0.2)', marginBottom: '12px' }}></div>
+
+            {/* Length */}
+            <label>Length (m)</label>
+            <input
+              type="range"
+              min="0"
+              max="400"
+              value={filters.lengthMax}
+              onChange={(e) =>
+                setFilters(prev => ({ ...prev, lengthMax: parseInt(e.target.value) }))
+              }
+            />
+            <div>{filters.lengthMin} – {filters.lengthMax} m</div>
+
+            {/* Beam */}
+            <label>Beam (m)</label>
+            <input
+              type="range"
+              min="0"
+              max="100"
+              value={filters.beamMax}
+              onChange={(e) =>
+                setFilters(prev => ({ ...prev, beamMax: parseInt(e.target.value) }))
+              }
+            />
+            <div>{filters.beamMin} – {filters.beamMax} m</div>
+
+            {/* GT Range */}
+            <label>Gross Tonnage (GT)</label>
+            <input
+              type="range"
+              min="0"
+              max="300000"
+              value={filters.gtMax}
+              onChange={(e) =>
+                setFilters(prev => ({ ...prev, gtMax: parseInt(e.target.value) }))
+              }
+            />
+            <div>{filters.gtMin} – {filters.gtMax} GT</div>
+
+            {/* Speed */}
+            <label>Speed (knots)</label>
+            <input
+              type="range"
+              min="0"
+              max="40"
+              value={filters.speedMax}
+              onChange={(e) =>
+                setFilters(prev => ({ ...prev, speedMax: parseInt(e.target.value) }))
+              }
+            />
+            <div>{filters.speedMin} – {filters.speedMax} kn</div>
+
+            {/* Checkboxes */}
+            <div style={{ marginTop: '15px' }}>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={filters.hasIMO}
+                  onChange={(e) =>
+                    setFilters(prev => ({ ...prev, hasIMO: e.target.checked }))
+                  }
+                />{' '}
+                Has IMO Number
+              </label>
+            </div>
+
+            <div>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={filters.hasGT}
+                  onChange={(e) =>
+                    setFilters(prev => ({ ...prev, hasGT: e.target.checked }))
+                  }
+                />{' '}
+                Has GT Data
+              </label>
+            </div>
+
+            {/* Reset */}
+            <motion.button
+              onClick={() =>
+                setFilters(prev => ({
+                  ...prev,
+                  lengthMin: 0,
+                  lengthMax: 400,
+                  beamMin: 0,
+                  beamMax: 100,
+                  gtMin: 0,
+                  gtMax: 300000,
+                  speedMin: 0,
+                  speedMax: 40,
+                  hasIMO: false,
+                  hasGT: false
+                }))
+              }
+              style={{
+                marginTop: '20px',
+                padding: '10px 20px',
+                background: '#ff4444',
+                color: '#fff',
+                borderRadius: '8px',
+                cursor: 'pointer'
+              }}
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+            >
+              Reset Advanced Filters
+            </motion.button>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Map Container */}
       <motion.div
@@ -536,72 +927,102 @@ function WindyEmbed({ opacity }) {
           className="leaflet-map"
           zoomControl={true}
         >
+        {darkMode ? (
+          <TileLayer
+            attribution="© OpenStreetMap, © CartoDB"
+            url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png"
+          />
+        ) : (
           <TileLayer
             attribution="© OpenStreetMap"
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-
           />
+        )}
+        {/* ========================  
+            ROUTE HISTORY RENDERING  
+          ======================== */}
+        {routeData && routeData.length > 1 && (
+          <>
+            <Polyline
+              positions={routeData.map(p => [p.lat, p.lon])}
+              pathOptions={{
+                color: "#00eaff",
+                weight: 4,
+                opacity: 0.9,
+                dashArray: "4 6",
+              }}
+            />
+
+            {/* Start Marker */}
+            <Marker
+              position={[routeData[0].lat, routeData[0].lon]}
+              icon={L.divIcon({
+                className: "route-start-icon",
+                html: `<div class="route-marker route-start"></div>`,
+                iconSize: [18, 18],
+                iconAnchor: [9, 9],
+              })}
+            />
+
+            {/* End Marker */}
+            <Marker
+              position={[
+                routeData[routeData.length - 1].lat,
+                routeData[routeData.length - 1].lon
+              ]}
+              icon={L.divIcon({
+                className: "route-end-icon",
+                html: `<div class="route-marker route-end"></div>`,
+                iconSize: [18, 18],
+                iconAnchor: [9, 9],
+              })}
+            />
+          </>
+        )}
+
 
 
 
 
           {filteredVessels.map(vessel => {
-            const typeInfo = getShipTypeInfo(vessel.ship_type);
-            const trail = vesselTrails[vessel.mmsi] || [];
+            const typeInfo = getShipTypeInfo(vessel);
 
             return (
               <React.Fragment key={vessel.mmsi}>
-                {/* Vessel Trail */}
-                {showTrails && trail.length > 1 && (
-                  <Polyline
-                    positions={[...trail.map(t => [t.lat, t.lon]), [vessel.lat, vessel.lon]]}
-                    pathOptions={{
-                      color: typeInfo.color,
-                      weight: 3,
-                      opacity: 0.6,
-                      dashArray: '10, 10',
-                      lineCap: 'round'
-                    }}
-                    className="vessel-trail"
-                  />
-                )}
-
-                {/* Ripple Effects */}
-                {showRipples && (
-                  <>
-                    <Circle
-                      center={[vessel.lat, vessel.lon]}
-                      radius={500}
-                      pathOptions={{
-                        fillColor: typeInfo.color,
-                        fillOpacity: 0.1,
-                        color: typeInfo.color,
-                        weight: 2,
-                        opacity: 0.6
-                      }}
-                      className="vessel-ripple-1"
-                    />
-                    <Circle
-                      center={[vessel.lat, vessel.lon]}
-                      radius={1000}
-                      pathOptions={{
-                        fillColor: typeInfo.color,
-                        fillOpacity: 0.05,
-                        color: typeInfo.color,
-                        weight: 1,
-                        opacity: 0.3
-                      }}
-                      className="vessel-ripple-2"
-                    />
-                  </>
-                )}
-
+                
                 {/* Vessel Marker */}
                 <Marker
                   position={[vessel.lat, vessel.lon]}
                   icon={createVesselIcon(vessel, selectedVessel === vessel.mmsi)}
                   eventHandlers={{
-                    click: () => setSelectedVessel(vessel.mmsi),
+                  click: () => {
+                    setSelectedVessel(vessel.mmsi);
+                    setRouteLoading(true);
+                    setRouteData(null);
+
+                    fetch(`/ships/api/vessel/${vessel.mmsi}/route?hours=${routeHours}`)
+                      .then(res => res.json())
+                      .then(data => {
+                        setRouteLoading(false);
+
+                        if (data && data.length > 1) {
+                          setRouteData(data);
+
+                          // auto-fit route
+                          if (mapRef.current) {
+                            const bounds = L.latLngBounds(data.map(p => [p.lat, p.lon]));
+                            mapRef.current.fitBounds(bounds, { padding: [50, 50] });
+                          }
+                        } else {
+                          setRouteData([]);
+                        }
+                      })
+                      .catch(() => {
+                        setRouteLoading(false);
+                        setRouteData([]);
+                      });
+                  },
+
                     mouseover: () => {
                       if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
                       hoverTimeoutRef.current = setTimeout(() => {
@@ -624,10 +1045,59 @@ function WindyEmbed({ opacity }) {
             );
           })}
 
-          <MapBounds markers={filteredVessels} />
+          <MapBounds
+          markers={filteredVessels}
+          disabled={routeData && routeData.length > 1}
+          />
+
+
+                  {/* Route History Line */}
+        {routeData && routeData.length > 1 && (
+          <>
+            <Polyline
+              positions={routeData.map(p => [p.lat, p.lon])}
+              pathOptions={{
+                color: "#00eaff",
+                weight: 3,
+                opacity: 0.8,
+              }}
+            />
+            
+            {/* Start Marker (oldest point) */}
+            <Marker
+              position={[routeData[0].lat, routeData[0].lon]}
+              icon={L.divIcon({
+                className: "route-start",
+                html: `<div class="route-marker route-start"></div>`,
+                iconSize: [16, 16]
+              })}
+            />
+
+            {/* End Marker (latest point) */}
+            <Marker
+              position={[routeData[routeData.length - 1].lat, routeData[routeData.length - 1].lon]}
+              icon={L.divIcon({
+                className: "route-end",
+                html: `<div class="route-marker route-end"></div>`,
+                iconSize: [16, 16]
+              })}
+            />
+          </>
+        )}
+
         </MapContainer>
+
         {/* Windy Overlay on Top */}
         {showWindLayer && <WindyEmbed opacity={windOpacity} />}
+        <VesselSidebar
+        vessel={vessels.find(v => v.mmsi === selectedVessel)}
+        getShipTypeInfo={getShipTypeInfo}   // <-- add this line
+        onClose={() => {
+          setSelectedVessel(null);
+          setRouteData(null);
+        }}
+        darkMode={darkMode}
+      />
 
         {/* Hover Info Card */}
         <AnimatePresence>
@@ -641,12 +1111,12 @@ function WindyEmbed({ opacity }) {
             >
               <div className="hover-card-header">
                 <span className="hover-card-icon">
-                  {getShipTypeInfo(hoveredVessel.ship_type).icon}
+                  {getShipTypeInfo(hoveredVessel).icon}
                 </span>
                 <div>
                   <h4 className="hover-card-name">{hoveredVessel.name || 'Unknown'}</h4>
                   <p className="hover-card-type">
-                    {getShipTypeInfo(hoveredVessel.ship_type).name}
+                    {getShipTypeInfo(hoveredVessel).name}
                   </p>
                 </div>
               </div>
@@ -688,65 +1158,82 @@ function WindyEmbed({ opacity }) {
           )}
         </AnimatePresence>
 
-        {/* Animated Legend */}
-        <motion.div
-          className="map-legend"
-          initial={{ x: 100, opacity: 0 }}
-          animate={{ x: 0, opacity: 1 }}
-          transition={{ delay: 0.8, duration: 0.6 }}
-        >
-          <h3 className="legend-title">
-            <motion.span
-              animate={{ rotate: [0, 10, 0] }}
-              transition={{ duration: 2, repeat: Infinity }}
-            >
-              ⚓
-            </motion.span>{' '}
-            Legend
-          </h3>
+    {/* Animated Legend */}
+    {/* LEGACY-STYLE SHIP TYPE LEGEND */}
 
-          {Object.values(shipTypeInfo).map((type, idx) => (
-            <motion.div
-              key={idx}
-              className="legend-item"
-              initial={{ x: 20, opacity: 0 }}
-              animate={{ x: 0, opacity: 1 }}
-              transition={{ delay: 0.9 + idx * 0.1 }}
-              whileHover={{ x: 5, scale: 1.05 }}
-            >
-              <div
-                className="legend-dot"
-                style={{
-                  background: type.color,
-                  boxShadow: `0 0 15px ${type.color}`
-                }}
-              >
-                <span className="legend-icon">{type.icon}</span>
-              </div>
-              <span>{type.name}</span>
-            </motion.div>
-          ))}
+    {routeLoading && (
+      <div className="route-loading">
+        Fetching route…
+      </div>
+    )}
 
-          <motion.div
-            className="legend-info"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 1.2 }}
+      <motion.div
+        className="map-legend"
+        initial={{ x: 100, opacity: 0 }}
+        animate={{ x: 0, opacity: 1 }}
+        transition={{ delay: 0.8, duration: 0.6 }}
+        style={{ maxHeight: "45vh", overflowY: "auto" }}   // <-- prevents huge legend
+      >
+        <h3 className="legend-title">
+          <motion.span
+            animate={{ rotate: [0, 10, 0] }}
+            transition={{ duration: 2, repeat: Infinity }}
           >
-            <div className="legend-divider"></div>
-            <p>
-              <strong>Size Guide:</strong>
-            </p>
-            <p>• Large = ≥200m</p>
-            <p>• Medium = 100-200m</p>
-            <div className="legend-divider"></div>
-            <p>
-              <strong>Wind-Assisted:</strong>
-            </p>
-            <p>🌬️ = Wind propulsion</p>
-            <p style={{ color: '#00ff00' }}>Green border</p>
+            ⚓
+          </motion.span>{" "}
+          Legend
+        </h3>
+
+        {[
+          ['Bulk carrier', '#8B4513'],
+          ['Container ship', '#FF4500'],
+          ['General cargo', '#32CD32'],
+          ['Oil tanker', '#DC143C'],
+          ['Chemical tanker', '#FF1493'],
+          ['LNG carrier', '#9370DB'],
+          ['Gas carrier', '#BA55D3'],
+          ['Vehicle carrier', '#FFD700'],
+          ['Ro-ro ship', '#FFA500'],
+          ['Refrigerated cargo', '#00CED1'],
+          ['Passenger ship', '#1E90FF'],
+          ['Other', '#808080'],
+        ].map(([name, color], idx) => (
+          <motion.div
+            key={name}
+            className="legend-item"
+            initial={{ x: 20, opacity: 0 }}
+            animate={{ x: 0, opacity: 1 }}
+            transition={{ delay: 0.9 + idx * 0.1 }}
+            whileHover={{ x: 5, scale: 1.05 }}
+          >
+            <div
+              className="legend-dot"
+              style={{
+                background: color,
+                boxShadow: `0 0 12px ${color}`
+              }}
+            ></div>
+            <span>{name}</span>
           </motion.div>
+        ))}
+
+        <motion.div
+          className="legend-info"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 1.2 }}
+        >
+          <div className="legend-divider"></div>
+          <p><strong>Size Guide:</strong></p>
+          <p>• Large = ≥200m</p>
+          <p>• Medium = 100–200m</p>
+          <div className="legend-divider"></div>
+          <p><strong>Wind-Assisted:</strong></p>
+          <p>🌬️ = Wind propulsion</p>
+          <p style={{ color: '#00ff00' }}>Green border</p>
         </motion.div>
+      </motion.div>
+
       </motion.div>
     </div>
   );
@@ -754,7 +1241,7 @@ function WindyEmbed({ opacity }) {
 
 // Enhanced Vessel Popup
 function VesselPopup({ vessel, getShipTypeInfo }) {
-  const info = getShipTypeInfo(vessel.ship_type);
+  const info = getShipTypeInfo(vessel);
   const [windTechDetails, setWindTechDetails] = useState(null);
 
   // Fetch wind technology details if vessel has wind propulsion
@@ -894,5 +1381,9 @@ function VesselPopup({ vessel, getShipTypeInfo }) {
         )}
       </div>
     </motion.div>
+    
   );
+
 }
+
+

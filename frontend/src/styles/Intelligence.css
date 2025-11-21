@@ -1,0 +1,332 @@
+/* === PAGE WRAPPER === */
+.intel-page {
+  min-height: 100vh;
+  padding-bottom: 40px;
+  background: radial-gradient(circle at top, #e0f2ff 0%, #f5fbff 40%, #ffffff 100%);
+  color: #0f172a;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+/* === HEADER (align with Map header vibe) === */
+.intel-header {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 32px 24px 8px;
+}
+
+.intel-header h1 {
+  font-size: 2.2rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  margin: 0;
+  background: linear-gradient(120deg, #0369a1, #0ea5e9);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.intel-subtitle {
+  margin-top: 6px;
+  font-size: 0.9rem;
+  color: #64748b;
+}
+
+/* === MAIN CONTAINER (align with Map container) === */
+.intel-container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 8px 24px 40px;
+}
+
+/* === STATS CARDS (match Map stat-card style) === */
+.intel-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 18px;
+  margin-bottom: 24px;
+}
+
+.intel-stat-card {
+  background: rgba(255, 255, 255, 0.92);
+  border-radius: 18px;
+  padding: 18px 18px 16px;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.08);
+  backdrop-filter: blur(10px);
+}
+
+.intel-stat-card h3 {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: #64748b;
+  margin: 0 0 6px;
+}
+
+.intel-stat-value {
+  font-size: 1.9rem;
+  font-weight: 800;
+  color: #0f172a;
+  margin-bottom: 4px;
+}
+
+.intel-stat-label {
+  font-size: 0.8rem;
+  color: #94a3b8;
+}
+
+/* === GENERIC SECTION CARD (like map cards / panels) === */
+.intel-section {
+  background: rgba(255, 255, 255, 0.96);
+  border-radius: 20px;
+  padding: 18px 18px 16px;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  box-shadow: 0 22px 45px rgba(15, 23, 42, 0.08);
+  backdrop-filter: blur(10px);
+  margin-bottom: 22px;
+}
+
+.intel-section-title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #0f172a;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-bottom: 10px;
+  margin-bottom: 14px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.35);
+}
+
+/* === SCRAPER STATUS GRID === */
+.intel-scraper-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 16px;
+}
+
+.scraper-box {
+  background: linear-gradient(135deg, #eff6ff 0%, #ffffff 60%);
+  border-radius: 16px;
+  border: 1px solid rgba(129, 140, 248, 0.4);
+  box-shadow: 0 16px 35px rgba(15, 23, 42, 0.08);
+  overflow: hidden;
+}
+
+.scraper-header {
+  padding: 10px 14px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.06), rgba(37, 99, 235, 0.12));
+  border-bottom: 1px solid rgba(129, 140, 248, 0.4);
+}
+
+.scraper-header h3 {
+  margin: 0;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: #1d4ed8;
+}
+
+.scraper-status {
+  font-size: 0.85rem;
+}
+
+.scraper-status.running {
+  color: #16a34a;
+  animation: intel-pulse 1.5s infinite;
+}
+
+.scraper-status.idle {
+  color: #9ca3af;
+}
+
+@keyframes intel-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.6; transform: scale(0.95); }
+}
+
+.scraper-body {
+  padding: 12px 14px;
+}
+
+.scraper-info {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.8rem;
+  margin-bottom: 6px;
+  color: #475569;
+}
+
+.scraper-info span:first-child {
+  color: #6b7280;
+}
+
+/* === PROGRESS BAR === */
+.progress-bar {
+  background: rgba(191, 219, 254, 0.9);
+  height: 7px;
+  border-radius: 999px;
+  overflow: hidden;
+  margin: 10px 0 8px;
+}
+
+.progress-fill {
+  background: linear-gradient(90deg, #38bdf8, #22c55e);
+  height: 100%;
+  border-radius: 999px;
+  transition: width 0.35s ease-out;
+}
+
+/* === CATEGORIES (like mini stat bars) === */
+.category-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.category-label {
+  min-width: 200px;
+  font-size: 0.8rem;
+  color: #64748b;
+}
+
+.category-progress {
+  flex: 1;
+  height: 22px;
+  background: #e5edf7;
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.category-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #0ea5e9, #22c55e);
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding-right: 10px;
+  border-radius: 999px;
+  transition: width 0.35s ease-out;
+}
+
+.category-count {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #f9fafb;
+}
+
+/* === TOP COMPANIES === */
+.company-row {
+  background: rgba(248, 250, 252, 0.9);
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  border-radius: 12px;
+  padding: 10px 14px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.company-rank {
+  font-weight: 700;
+  color: #94a3b8;
+  margin-right: 6px;
+}
+
+.company-name {
+  font-weight: 600;
+  color: #0f172a;
+  margin-right: 4px;
+}
+
+.fleet-size {
+  font-size: 0.75rem;
+  color: #6b7280;
+}
+
+.company-findings {
+  background: rgba(37, 99, 235, 0.08);
+  color: #1d4ed8;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+/* === DATASETS === */
+.dataset-item {
+  background: rgba(248, 250, 252, 0.96);
+  border-radius: 14px;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  padding: 12px 14px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+}
+
+.dataset-item:hover {
+  transform: translateY(-2px);
+  border-color: rgba(37, 99, 235, 0.55);
+  box-shadow: 0 18px 35px rgba(15, 23, 42, 0.12);
+}
+
+.dataset-info h4 {
+  margin: 0 0 4px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.dataset-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  font-size: 0.75rem;
+  color: #6b7280;
+}
+
+.download-btn {
+  background: linear-gradient(135deg, #0ea5e9, #22c55e);
+  color: #f9fafb;
+  border: none;
+  padding: 8px 14px;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 10px 25px rgba(56, 189, 248, 0.4);
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+
+.download-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 14px 28px rgba(56, 189, 248, 0.5);
+}
+
+/* === EMPTY STATE === */
+.empty-state {
+  text-align: center;
+  padding: 22px 10px;
+  font-size: 0.85rem;
+  color: #9ca3af;
+}
+
+/* RESPONSIVE TWEAKS */
+@media (max-width: 768px) {
+  .intel-header {
+    padding: 20px 16px 4px;
+  }
+
+  .intel-container {
+    padding: 4px 16px 28px;
+  }
+
+  .category-label {
+    min-width: 140px;
+  }
+}

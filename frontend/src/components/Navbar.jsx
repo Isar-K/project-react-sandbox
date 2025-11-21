@@ -8,6 +8,7 @@ export default function Navbar() {
     { to: '/', label: 'Home' },
     { to: '/map', label: 'Map' },
     { to: '/database', label: 'Data' },
+    { to: '/intelligence', label: 'Intelligence' },
     { to: '/about', label: 'About' },
   ]
 

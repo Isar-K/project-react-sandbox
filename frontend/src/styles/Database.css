@@ -1236,6 +1236,35 @@
   transform: translateY(-2px);
 }
 
+.apply-filters-btn,
+.reset-filters-btn {
+  padding: 8px 14px;
+  border-radius: 6px;
+  border: none;
+  cursor: pointer;
+  font-weight: 600;
+  transition: 0.2s ease;
+}
+
+.apply-filters-btn {
+  background: #1d7af3;
+  color: white;
+}
+
+.apply-filters-btn:hover {
+  background: #0f5fcc;
+}
+
+.reset-filters-btn {
+  background: #e5e7eb;
+  color: #111;
+}
+
+.reset-filters-btn:hover {
+  background: #d1d5db;
+}
+
+
 /* Responsive */
 @media (max-width: 768px) {
   .database-container {

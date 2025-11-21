@@ -644,6 +644,127 @@
   animation: ripple-pulse 3s ease-out infinite 1.5s;
 }
 
+.route-marker {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid white;
+  box-shadow: 0 0 10px rgba(255,255,255,0.6);
+}
+
+.route-start {
+  background: #00ff00; /* green */
+}
+
+.route-end {
+  background: #ff0033; /* red */
+}
+.vessel-sidebar::-webkit-scrollbar {
+  width: 6px;
+}
+.vessel-sidebar::-webkit-scrollbar-thumb {
+  background: #666;
+  border-radius: 3px;
+}
+/* === DARK MODE VARIANTS === */
+
+.vessel-map-page.dark-mode {
+  background: radial-gradient(circle at top, #020617 0%, #020617 40%, #000 100%);
+}
+
+/* Header & title */
+.vessel-map-page.dark-mode .map-header {
+  background: linear-gradient(135deg, rgba(15,23,42,0.95), rgba(15,23,42,0.98));
+  border-bottom-color: rgba(56,189,248,0.4);
+  box-shadow: 0 10px 40px rgba(0,0,0,0.9);
+}
+
+.vessel-map-page.dark-mode .map-main-title {
+  background: linear-gradient(90deg, #38bdf8, #22c55e);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.vessel-map-page.dark-mode .map-subtitle {
+  color: #9ca3af;
+}
+
+/* Stats cards */
+.vessel-map-page.dark-mode .stat-card {
+  background: linear-gradient(135deg, #020617 0%, #020617 100%);
+  border-color: rgba(56,189,248,0.5);
+  box-shadow: 0 10px 40px rgba(0,0,0,0.9);
+}
+
+.vessel-map-page.dark-mode .stat-value {
+  color: #e5f4ff;
+}
+
+.vessel-map-page.dark-mode .stat-label {
+  color: #9ca3af;
+}
+
+/* Filters */
+.vessel-map-page.dark-mode .filter-wrapper label {
+  color: #e5e7eb;
+}
+
+.vessel-map-page.dark-mode .filter-wrapper select {
+  background: rgba(15,23,42,0.98);
+  color: #e5e7eb;
+  border-color: rgba(56,189,248,0.5);
+}
+
+/* Map container */
+.vessel-map-page.dark-mode .map-container {
+  border-color: rgba(56,189,248,0.7);
+  box-shadow: 0 20px 60px rgba(0,0,0,0.95);
+}
+
+/* Legend */
+.vessel-map-page.dark-mode .map-legend {
+  background: rgba(15,23,42,0.98);
+  border-color: rgba(56,189,248,0.5);
+  color: #e5e7eb;
+}
+
+.vessel-map-page.dark-mode .legend-title {
+  color: #e5e7eb;
+  border-bottom-color: rgba(56,189,248,0.4);
+}
+
+.vessel-map-page.dark-mode .legend-item {
+  color: #d1d5db;
+}
+
+.vessel-map-page.dark-mode .legend-info {
+  color: #9ca3af;
+}
+
+/* Popup dark mode */
+.vessel-map-page.dark-mode .leaflet-popup-content-wrapper,
+.vessel-map-page.dark-mode .leaflet-popup-tip {
+  background: #020617 !important;
+  color: #e5e7eb !important;
+  border-color: rgba(56,189,248,0.5) !important;
+}
+
+.vessel-map-page.dark-mode .detail-label {
+  color: #9ca3af;
+}
+
+.vessel-map-page.dark-mode .detail-value {
+  color: #e5e7eb;
+}
+
+/* Hover card */
+.vessel-map-page.dark-mode .vessel-hover-card {
+  background: rgba(15,23,42,0.98);
+  border: 1px solid rgba(56,189,248,0.5);
+  color: #e5e7eb;
+}
+
 @keyframes ripple-pulse {
   0% {
     opacity: 0.6;
