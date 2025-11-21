@@ -12,9 +12,6 @@ import threading
 import time
 from pathlib import Path
 from datetime import datetime
-from flask_cors import CORS
-
-
 
 # Configuration
 DB_NAME = "vessel_static_data.db"
@@ -44,6 +41,9 @@ MAX_MMSI_PER_CONNECTION = 50
 from werkzeug.middleware.proxy_fix import ProxyFix
 import os
 import sys
+from flask_cors import CORS
+
+
 
 # Get project root directory (two levels up from this file)
 project_root = Path(__file__).parent.parent.parent
@@ -372,7 +372,6 @@ def get_vessels():
             'gross_tonnage': static.get('gross_tonnage')  # From EU MRV emissions
         }
         
-        
         # Add position if available
         if mmsi in vessel_positions:
             vessel_info.update(vessel_positions[mmsi])
@@ -405,7 +404,6 @@ def get_vessel_route(mmsi):
     
     project_root = Path(__file__).parent.parent.parent
     db_path = project_root / DB_NAME
-    print("📂 Using database file:", db_path.resolve())
     
     conn = None
     try:
@@ -444,8 +442,6 @@ def get_all_vessels():
     """Get all vessels from database with filtering."""
     project_root = Path(__file__).parent.parent.parent
     db_path = project_root / DB_NAME
-    print("📂 Using database file:", db_path.resolve())
-
     
     conn = None
     try:
@@ -528,8 +524,6 @@ def get_companies():
     project_root = Path(__file__).parent.parent.parent
     db_path = project_root / DB_NAME
     
-    print("Using database:", db_path.resolve())
-    
     conn = None
     try:
         conn = sqlite3.connect(db_path, timeout=30)
@@ -588,8 +582,6 @@ def execute_sql_query():
         
         project_root = Path(__file__).parent.parent.parent
         db_path = project_root / DB_NAME
-        print("📂 Using database file:", db_path.resolve())
-
         
         conn = None
         start_time = time.time()
@@ -651,8 +643,6 @@ def export_sql_query():
         
         project_root = Path(__file__).parent.parent.parent
         db_path = project_root / DB_NAME
-        print("📂 Using database file:", db_path.resolve())
-
         
         conn = None
         try:
@@ -761,8 +751,6 @@ def get_vessel_emissions(imo):
     """Get emissions data for a specific vessel by IMO."""
     project_root = Path(__file__).parent.parent.parent
     db_path = project_root / DB_NAME
-    print("📂 Using database file:", db_path.resolve())
-
     
     conn = None
     try:
@@ -797,8 +785,6 @@ def get_score_breakdown(imo):
     """Get detailed breakdown of Econowind fit score for a vessel."""
     project_root = Path(__file__).parent.parent.parent
     db_path = project_root / DB_NAME
-    print("📂 Using database file:", db_path.resolve())
-
     
     conn = None
     try:

@@ -36,7 +36,12 @@ function MapBounds({ markers }) {
   return null;
 }
 
-// Ripple effect component for active vessels (currently unused but kept for styling)
+// Wind Layer Component
+// Windy API Overlay for Leaflet (no iframe)
+
+
+
+// Ripple effect component for active vessels
 function VesselRipple({ position, color }) {
   return (
     <Circle
@@ -56,8 +61,8 @@ function VesselRipple({ position, color }) {
 
 export default function VesselMap() {
   // ---- STATE ----
-  const [vessels, setVessels] = useState([]);            // All vessels (DB + live)
-  const [filteredVessels, setFilteredVessels] = useState([]); // Vessels after filters
+  const [vessels, setVessels] = useState([]);
+  const [filteredVessels, setFilteredVessels] = useState([]);
   const [stats, setStats] = useState({ total: 0, active: 0 });
   const [filters, setFilters] = useState({ type: 'all', size: 'all' });
   const [isConnected, setIsConnected] = useState(false);
@@ -65,7 +70,10 @@ export default function VesselMap() {
   const [showRipples, setShowRipples] = useState(true);
   const [showTrails, setShowTrails] = useState(false);
   const [hoveredVessel, setHoveredVessel] = useState(null);
-  const [vesselTrails, setVesselTrails] = useState({});  // mmsi -> [{lat, lon}, ...]
+  const [vesselTrails, setVesselTrails] = useState({});
+  const [showWindLayer, setShowWindLayer] = useState(false);
+  const [windOpacity, setWindOpacity] = useState(50);
+  const [waspFilterActive, setWaspFilterActive] = useState(false);
 
   // ---- REFS ----
   const socketRef = useRef(null);
@@ -92,6 +100,7 @@ export default function VesselMap() {
     const typeInfo = getShipTypeInfo(vessel.ship_type);
     const size = isLarge ? 18 : 14;
     const pulseSize = isSelected ? size + 6 : size;
+    const isWindAssisted = vessel.wind_assisted === 1;
 
     return L.divIcon({
       className: 'custom-vessel-marker',
@@ -107,11 +116,21 @@ export default function VesselMap() {
             background: ${typeInfo.color};
             width: ${size}px;
             height: ${size}px;
+            border: ${isWindAssisted ? '3px solid #00ff00' : '2px solid rgba(255,255,255,0.8)'};
             box-shadow: 0 0 ${isLarge ? 20 : 15}px ${typeInfo.color},
                         0 0 ${isLarge ? 40 : 30}px ${typeInfo.accent};
           ">
             <span class="vessel-icon">${typeInfo.icon}</span>
           </div>
+          ${isWindAssisted ? `
+            <div style="
+              position: absolute;
+              top: -8px;
+              right: -8px;
+              font-size: 16px;
+              filter: drop-shadow(0 0 3px #000);
+            ">🌬️</div>
+          ` : ''}
         </div>
       `,
       iconSize: [size, size],
@@ -124,6 +143,11 @@ export default function VesselMap() {
     return vesselList.filter(vessel => {
       // Must have a position to be drawn on the map
       if (!vessel.lat || !vessel.lon) return false;
+
+      // WASP filter - show only wind-assisted vessels
+      if (waspFilterActive && vessel.wind_assisted !== 1) {
+        return false;
+      }
 
       // Type filter
       if (filters.type !== 'all') {
@@ -149,11 +173,9 @@ export default function VesselMap() {
 
   // ---- INITIAL LOAD ----
   useEffect(() => {
-    // Same endpoint as old HTML map: gives static vessels + any current positions
     fetch('/ships/api/vessels')
       .then(res => res.json())
       .then(data => {
-        // Keep all vessels (even those without positions) for stats & future updates
         setVessels(data);
         setStats(prev => ({ ...prev, total: data.length }));
       })
@@ -165,15 +187,13 @@ export default function VesselMap() {
     const filtered = applyFilters(vessels);
     setFilteredVessels(filtered);
     setStats(prev => ({ ...prev, active: filtered.length }));
-  }, [vessels, filters]);
+  }, [vessels, filters, waspFilterActive]);
 
   // ---- WEBSOCKET CONNECTION (LIVE UPDATES) ----
   useEffect(() => {
     try {
-      // Check if backend is running before attempting connection
       fetch('/ships/api/vessels')
         .then(() => {
-          // Only connect to socket if API is available
           socketRef.current = io({
             path: '/ships/socket.io',
             transports: ['websocket', 'polling'],
@@ -197,12 +217,10 @@ export default function VesselMap() {
             setIsConnected(false);
           });
 
-          // Optional: debug initial payload
           socketRef.current.on('initial_data', (data) => {
             console.log('📡 initial_data from server:', data);
           });
 
-          // LIVE POSITION UPDATES
           socketRef.current.on('vessel_update', (data) => {
             const { mmsi, position } = data;
 
@@ -212,16 +230,13 @@ export default function VesselMap() {
               if (index >= 0) {
                 const updated = [...prev];
                 const oldVessel = updated[index];
-
-                // Update static + dynamic data
                 updated[index] = { ...oldVessel, ...position };
 
-                // Always keep trails in sync (toggle only affects rendering)
                 if (oldVessel.lat && oldVessel.lon) {
                   setVesselTrails(trails => ({
                     ...trails,
                     [mmsi]: [
-                      ...(trails[mmsi] || []).slice(-10), // Keep last 10 positions
+                      ...(trails[mmsi] || []).slice(-10),
                       { lat: oldVessel.lat, lon: oldVessel.lon }
                     ]
                   }));
@@ -229,7 +244,6 @@ export default function VesselMap() {
 
                 return updated;
               } else {
-                // New vessel not in initial list yet
                 const newVessel = { mmsi, ...position };
                 return [...prev, newVessel];
               }
@@ -251,7 +265,30 @@ export default function VesselMap() {
     };
   }, []);
 
-  // ---- PERIODIC STATS REFRESH (TOTAL FROM BACKEND) ----
+
+function WindyEmbed({ opacity }) {
+  return (
+    <iframe
+      title="Windy Wind Layer"
+      src="https://embed.windy.com/embed2.html?lat=50.4&lon=3.8&detailLat=51.5&detailLon=2.3&zoom=4&level=surface&overlay=wind&product=ecmwf&type=map&metricWind=default&metricTemp=default"
+      style={{
+        position: "absolute",
+        top: 0,
+        left: 0,
+        width: "100%",
+        height: "100%",
+        opacity: opacity / 100,
+        pointerEvents: "none",
+        border: "none",
+        zIndex: 9999,  // <-- THIS IS THE FIX
+      }}
+    />
+  );
+}
+
+
+
+  // ---- PERIODIC STATS REFRESH ----
   useEffect(() => {
     const interval = setInterval(() => {
       fetch('/ships/api/stats')
@@ -404,8 +441,85 @@ export default function VesselMap() {
           >
             {showTrails ? '✨ Trails ON' : '✨ Trails OFF'}
           </motion.button>
+
+          <motion.button
+            className="wasp-toggle"
+            onClick={() => setWaspFilterActive(!waspFilterActive)}
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            style={{
+              background: waspFilterActive 
+                ? 'linear-gradient(135deg, #ff00ff 0%, #cc00cc 100%)'
+                : 'linear-gradient(135deg, #00ff00 0%, #00cc00 100%)',
+              border: waspFilterActive ? '3px solid #ff00ff' : '3px solid #00ff00',
+              boxShadow: waspFilterActive 
+                ? '0 0 20px rgba(255, 0, 255, 0.5)'
+                : '0 0 20px rgba(0, 255, 0, 0.5)',
+              padding: '12px 24px',
+              borderRadius: '8px',
+              fontSize: '14px',
+              fontWeight: 'bold',
+              cursor: 'pointer',
+              transition: 'all 0.3s',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px'
+            }}
+          >
+            🌬️ {waspFilterActive ? 'SHOW ALL VESSELS' : 'WIND-ASSISTED ONLY'}
+          </motion.button>
+
+          <motion.button
+            className="wind-toggle"
+            onClick={() => setShowWindLayer(!showWindLayer)}
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            style={{
+              background: showWindLayer 
+                ? 'linear-gradient(135deg, #ff6600 0%, #cc5200 100%)'
+                : 'linear-gradient(135deg, #00d4ff 0%, #0099cc 100%)',
+              border: showWindLayer ? '3px solid #ff6600' : '3px solid #00d4ff',
+              boxShadow: showWindLayer 
+                ? '0 0 20px rgba(255, 102, 0, 0.5)'
+                : '0 0 20px rgba(0, 212, 255, 0.5)',
+              padding: '12px 24px',
+              borderRadius: '8px',
+              fontSize: '14px',
+              fontWeight: 'bold',
+              cursor: 'pointer',
+              transition: 'all 0.3s',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px'
+            }}
+          >
+            💨 {showWindLayer ? 'HIDE WIND DATA' : 'SHOW WIND DATA'}
+          </motion.button>
+
+          {showWindLayer && (
+            <motion.div
+              className="wind-opacity-control"
+              initial={{ opacity: 0, x: -20 }}
+              animate={{ opacity: 1, x: 0 }}
+              style={{ display: 'flex', alignItems: 'center', gap: '10px' }}
+            >
+              <label style={{ fontSize: '0.9rem', color: '#aaa' }}>Wind Opacity:</label>
+              <input
+                type="range"
+                min="0"
+                max="100"
+                value={windOpacity}
+                onChange={(e) => setWindOpacity(parseInt(e.target.value))}
+                style={{ width: '120px', cursor: 'pointer' }}
+              />
+              <span style={{ fontWeight: 'bold', color: '#00d4ff', minWidth: '45px' }}>
+                {windOpacity}%
+              </span>
+            </motion.div>
+          )}
         </motion.div>
       </motion.div>
+
 
       {/* Map Container */}
       <motion.div
@@ -413,7 +527,9 @@ export default function VesselMap() {
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
         transition={{ delay: 0.4, duration: 0.8 }}
+        style={{ position: 'relative' }}
       >
+        {/* Wind Layer Iframe */}
         <MapContainer
           center={[51.5, 2]}
           zoom={7}
@@ -423,7 +539,11 @@ export default function VesselMap() {
           <TileLayer
             attribution="© OpenStreetMap"
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+
           />
+
+
+
 
           {filteredVessels.map(vessel => {
             const typeInfo = getShipTypeInfo(vessel.ship_type);
@@ -506,6 +626,8 @@ export default function VesselMap() {
 
           <MapBounds markers={filteredVessels} />
         </MapContainer>
+        {/* Windy Overlay on Top */}
+        {showWindLayer && <WindyEmbed opacity={windOpacity} />}
 
         {/* Hover Info Card */}
         <AnimatePresence>
@@ -548,6 +670,20 @@ export default function VesselMap() {
                   </span>
                 </div>
               </div>
+              {hoveredVessel.wind_assisted === 1 && (
+                <div style={{ 
+                  marginTop: '10px', 
+                  padding: '8px', 
+                  background: 'rgba(0, 255, 0, 0.1)',
+                  borderRadius: '6px',
+                  fontSize: '12px',
+                  color: '#00ff00',
+                  fontWeight: 'bold',
+                  textAlign: 'center'
+                }}>
+                  🌬️ Wind-Assisted
+                </div>
+              )}
             </motion.div>
           )}
         </AnimatePresence>
@@ -603,6 +739,12 @@ export default function VesselMap() {
             </p>
             <p>• Large = ≥200m</p>
             <p>• Medium = 100-200m</p>
+            <div className="legend-divider"></div>
+            <p>
+              <strong>Wind-Assisted:</strong>
+            </p>
+            <p>🌬️ = Wind propulsion</p>
+            <p style={{ color: '#00ff00' }}>Green border</p>
           </motion.div>
         </motion.div>
       </motion.div>
@@ -613,6 +755,21 @@ export default function VesselMap() {
 // Enhanced Vessel Popup
 function VesselPopup({ vessel, getShipTypeInfo }) {
   const info = getShipTypeInfo(vessel.ship_type);
+  const [windTechDetails, setWindTechDetails] = useState(null);
+
+  // Fetch wind technology details if vessel has wind propulsion
+  useEffect(() => {
+    if (vessel.wind_assisted === 1) {
+      fetch(`/ships/api/vessel/${vessel.mmsi}/wind-tech`)
+        .then(response => response.json())
+        .then(data => {
+          if (data.found) {
+            setWindTechDetails(data);
+          }
+        })
+        .catch(error => console.error('Error loading wind tech:', error));
+    }
+  }, [vessel.mmsi, vessel.wind_assisted]);
 
   return (
     <motion.div
@@ -636,6 +793,23 @@ function VesselPopup({ vessel, getShipTypeInfo }) {
         <span className="popup-badge" style={{ background: info.color }}>
           {info.name}
         </span>
+        
+        {/* Wind-Assisted Indicator */}
+        {vessel.wind_assisted === 1 && (
+          <div style={{ 
+            marginTop: '8px', 
+            padding: '6px 12px', 
+            background: 'linear-gradient(135deg, #1a3a1a 0%, #2d5a2d 100%)',
+            border: '2px solid #00ff00',
+            borderRadius: '6px',
+            fontSize: '13px',
+            fontWeight: 'bold',
+            color: '#00ff00',
+            textAlign: 'center'
+          }}>
+            🌬️ Wind-Assisted Propulsion
+          </div>
+        )}
       </div>
 
       <div className="popup-details">
@@ -659,6 +833,26 @@ function VesselPopup({ vessel, getShipTypeInfo }) {
             <span className="detail-value">{vessel.imo}</span>
           </div>
         )}
+        
+        {/* Wind Technology Details */}
+        {windTechDetails && (
+          <>
+            <div className="detail-divider"></div>
+            <div className="detail-row">
+              <span className="detail-label">Wind Tech</span>
+              <span className="detail-value" style={{ color: '#00ff00' }}>
+                {windTechDetails.technology}
+              </span>
+            </div>
+            <div className="detail-row">
+              <span className="detail-label">Installed</span>
+              <span className="detail-value">
+                {windTechDetails.year} ({windTechDetails.type})
+              </span>
+            </div>
+          </>
+        )}
+        
         <div className="detail-divider"></div>
         {vessel.lat != null && vessel.lon != null && (
           <>
